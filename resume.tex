@@ -1,0 +1,3008 @@
+Voici un résumé structuré et concis de l'état de l'art sur la modélisation et l'évaluation de la similarité entre exercices de programmation :
+
+  * **Problématique et périmètre :**
+    
+      * Évaluer la ressemblance entre exercices est indispensable pour substituer l'un par l'autre dans les plateformes d'apprentissage (EIAH), mais la notion de similarité varie selon l'aspect analysé (consignes textuelles, structure du code, traces d'activité).
+      * Le problème du « démarrage à froid » (*cold-start*) complexifie l'analyse en l'absence de données étiquetées ou de statistiques de réussite des apprenants.
+
+  * **Les approches recensées :**
+    
+      * **Approche textuelle et sémantique (NLP) :** Analyse le vocabulaire des consignes (TF-IDF, Transformers, BERT, SBERT). *Limites :* Incapable de capturer la structure du code sous-jacent ou les modifications de structures de données (ex: Set au lieu de Liste).
+      * **Approche par étiquetage conceptuel :** Imite l'humain en associant des exercices à des concepts pédagogiques précis. *Limites :* Sujette au biais d'annotation, inapplicable en mode *cold-start* et aveugle à la complexité réelle du code.
+      * **Approche par statistiques de réussite :** Analyse les traces des élèves (temps moyen, nombre d'essais, taux d'échec). *Limite :* Bloquée par le problème du *cold-start* pour les nouveaux exercices.
+      * **Approche syntaxique et structurelle (AST) :** Transforme le code source en Arbre Syntaxique Abstrait pour comparer l'ossature logique via la distance de Zhang-Shasha. *Limite :* Statique et aveugle à la dynamique d'exécution ou aux erreurs de flux de données.
+      * **Approche sémantique du code (Graphes et IA) :** Utilise des réseaux comme le CPG (fusion d'AST, CFG et PDG) et des modèles comme CodeBERT/GraphCodeBERT. *Limite :* Complexité NP-difficile (explosion combinatoire des nœuds) rendant la comparaison statique inexploitable à grande échelle.
+      * **Vérification formelle :** Certifie mathématiquement l'équivalence logique par solveur SMT (ex: Z3) et induction fonctionnelle. *Limite :* Rigidité extrême face aux stratégies d'étudiants atypiques.
+      * **Approche multimodale auto-supervisée (BCRNet) :** Fusionne texte, graphes et images par apprentissage contrastif sans règle humaine. *Limite :* Modèle « boîte noire » non explicable et exigeant des données massives.
+
+  * **Architecture technologique retenue pour le projet :**
+    
+      * Suite à l'élimination des approches trop lourdes, opaques ou inadaptées au *cold-start*, le projet propose une **hybridation ciblée** :
+          * **L'ossature logique transparente :** Extraction de la topologie via les Arbres Syntaxiques Abstraits (AST) et la distance de Zhang-Shasha pour garantir l'explicabilité.
+          * **La sémantique des données :** Analyse des flux de données à l'aide de modèles d'IA pré-entraînés et finement réglés (*finetunés* en mode contrastif), tels que GraphCodeBERT.
+
+
+
+
+En informatique, et plus particulièrement dans l'évaluation d'exercices de programmation, 
+la similarité désigne la mesure du degré de ressemblance entre deux fragments 
+de programme. Toutefois, dans la littérature scientifique, cette notion n'est 
+pas un concept univoque. Comme le souligne Pelánek \cite{pelanek_2020} dans sa
+ revue systématique, il n'existe pas de mesure universelle : la définition même 
+ de ce qui constitue la « proximité » varie radicalement selon le problème à 
+ résoudre et les données disponibles.Parmis les quels on retrouve une proximité caracterisé par 
+
+
+
+Cette définition rejoint notamment l'approche de Wang \emph{et al.}, qui combine un filtrage par métriques structurelles avec une comparaison de graphes de dépendances normalisés afin de détecter des codes sémantiquement proches malgré leurs variations syntaxiques \cite{wang_detection_2014}.
+
+
+
+L'analyse des travaux existants permet  de distinguer  plusieurs niveaux d'abstraction pour évaluer cette ressemblance.
+  Certains chercheurs se focalisent sur l'apparence de surface du code (les termes et caractères employés),
+   d'autres s'intéressent à l'organisation de son architecture interne,
+    tandis qu'une dernière catégorie observe plutôt l'équivalence des résultats
+     produits lors de l'exécution. Déterminer la bonne approche de similarité est donc 
+     une étape cruciale qui dépend intimement de l'objectif d'analyse poursuivi.
+
+
+\section{Qu'est-ce que la similarité ?}
+
+En informatique, et plus particulièrement dans l'évaluation d'exercices de programmation, la similarité désigne la mesure du degré de ressemblance entre deux fragments de programme. Toutefois, dans la littérature scientifique, cette notion n'est pas un concept univoque ni une propriété absolue. Comme le souligne Pelánek \cite{pelanek_2020} dans sa revue systématique, il n'existe pas de mesure universelle : la définition même de ce qui constitue la « proximité » est une construction conceptuelle qui varie radicalement selon le problème à résoudre et les données disponibles.
+
+En prenant de la hauteur sur les travaux existants, on constate que la définition de la similarité est intrinsèquement liée à l'intention de l'analyse. Concrètement, les chercheurs considèrent que deux codes sont similaires selon trois grands paradigmes :
+
+\begin{itemize}
+    \item \textbf{La similarité par l'origine (l'intention de copie) :} Dans les travaux historiques liés à la détection de plagiat, deux codes sont considérés comme similaires s'ils partagent une origine commune trahissant une copie. La similarité se mesure à la quantité de traits idiosyncrasiques partagés (erreurs identiques, style de formatage, choix de variables atypiques), et ce, même si l'un des programmes a subi des transformations de surface (offuscation, renommage) pour masquer cette filiation.
+    
+    \item \textbf{La similarité par l'équivalence (l'approche formelle) :} D'un point de vue plus théorique, certains travaux définissent la similarité comme une stricte équivalence comportementale. Deux programmes sont jugés similaires s'ils calculent la même fonction mathématique (ils produisent les mêmes sorties pour les mêmes entrées). Cette approche cherche à abstraire totalement le code pour le traduire en modèles formels. Si l'équivalence est prouvée, les codes sont déclarés similaires, quand bien même leurs syntaxes n'auraient rien en commun.
+    
+    \item \textbf{La similarité par les caractéristiques (l'approche structurelle) :} Enfin, une vision pragmatique considère que la similarité repose sur le partage de caractéristiques mesurables de résolution. Deux codes sont évalués comme proches s'ils affichent des métriques logicielles comparables ou s'ils s'appuient sur un squelette algorithmique analogue (même enchaînement et imbrication des structures de contrôle).
+\end{itemize}
+
+Dans le domaine des EIAH, l'objectif n'est ni de traquer le plagiat, ni de prouver une équivalence mathématique stricte. La similarité vise à identifier des activités susceptibles d'être rapprochées pour la recherche, la recommandation ou la personnalisation des parcours d'apprentissage \cite{liu_2018,tian_2022}. Elle ne se réduit donc pas à une simple ressemblance textuelle entre les énoncés : deux exercices peuvent être formulés avec des mots très différents tout en mobilisant une démarche algorithmique identique, et inversement.
+
+\paragraph{Définition retenue pour ce projet.}
+Dans le contexte de ce rapport, nous définissons la similarité entre deux exercices comme le \textbf{degré de proximité entre les caractéristiques pédagogiques et structurelles de leurs solutions de référence}. Ces caractéristiques concernent l'organisation des instructions, les structures de contrôle utilisées, les notions algorithmiques mobilisées et la complexité du traitement. Pour les capturer, l'analyse s'appuie sur des représentations telles que les arbres syntaxiques abstraits (AST) \cite{baxter_1998}, les distances d'édition entre arbres \cite{zhang_simple_1989} ou les graphes sémantiques \cite{xiang_2024,reddy_2025}.
+
+On peut formaliser cette idée par une fonction de similarité $S$ associant à deux exercices $e_i$ et $e_j$ un score continu :
+$$S(e_i, e_j) \in [0, 1]$$
+Une valeur proche de 1 indique une forte proximité algorithmique (stratégies de résolution analogues), tandis qu'une valeur proche de 0 signale des approches fondamentalement distinctes. 
+
+Ainsi, la similarité constitue dans ce travail un \textbf{indicateur multidimensionnel}. Estimée automatiquement à partir des propriétés intrinsèques du code de l'enseignant, cette valeur ne constitue pas à elle seule un jugement pédagogique définitif. Une forte similarité structurelle permet de filtrer des paires candidates et de signaler que deux exercices sont potentiellement substituables, mais cette substituabilité doit \textit{in fine} être confirmée par une analyse humaine tenant compte des notions visées et des objectifs d'apprentissage.
+
+
+
+
+
+
+
+
+
+
+***********Partition  des methodes  explorées*******************
+
+Les principaux domaines ou on cherche a caractérisé une similarité dans les EIAHs 
+
+
+Déja on a une premiere partition claire qui se trace dans l'evaluation automatique ou le calcul
+ de la similarité au sens meme de l'object a analysé dit autrement on peut dire que pour 
+ analysé les exercices on peut y a voir exactement que deux formes d'entrée  : 
+
+ \begin{itemize}
+    \item \textbf{énoncé }:les methodes qui utilise ses methodes sont multiples et
+     principalement utilise les methodes de traitement de texte come il sagit du texte bien 
+     evidement ,et ca avec des outils comme SBert qui est la réference dans le domaine de traitement 
+     de texte et des otils de deepLearning pour les énoncé qui contienne des images dans la suite on va rentré plus en détails dans ses methodes. 
+    
+    \textbf{Nb:} Que lorsque on parle de énoncé c'est soit \textquote{texte simple }
+     ou \textquote{texte + image}
+
+
+
+    \item \textbf{code solution} 
+    
+
+ \end{itemize}
+
+1---------les methodes de calcul de similarité  d'exercice par traitement de 
+textes ou énoncé -------------------
+
+
+
+
+Dans une plateforme éducative, un exercice peut être décrit par plusieurs types d'informations
+ : son énoncé textuel, les concepts ou connaissances mobilisés, les éventuelles illustrations, 
+ sa solution de référence et les données produites par les apprenants. Le choix de la représentat
+ ion utilisée influence directement la définition et l'interprétation de la similarité 
+ \cite{pelanek_measuring_2020}. Il n'existe donc pas une mesure universelle qui serait adaptée
+  à tous les exercices et à tous les usages.
+
+Une première famille de travaux cherche à comparer les exercices à partir de leur contenu textuel
+. Les méthodes les plus simples représentent les énoncés par des vecteurs de termes, par exemple 
+avec le modèle vectoriel ou la pondération TF--IDF, puis calculent une distance ou une 
+similarité cosinus entre ces représentations \cite{salton_vector_1975}. Ces méthodes sont
+ faciles à mettre en oeuvre et permettent de repérer rapidement les exercices qui partagent
+  un vocabulaire commun. Cependant, elles restent sensibles à la formulation des énoncés et 
+  peuvent confondre une proximité lexicale avec une véritable proximité pédagogique.
+
+D'autres approches exploitent des représentations sémantiques apprises. Les modèles de type 
+SBERT transforment les phrases ou les documents en embeddings comparables dans un espace vectoriel \cite{reimers_sentence-bert_2019}. Dans le domaine des EIAH, ces représentations peuvent être utilisées pour rechercher des exercices dont les énoncés sont sémantiquement proches, même lorsque leur vocabulaire diffère. Les modèles peuvent également intégrer des informations complémentaires comme les concepts associés ou les images. Par exemple, Liu \emph{et al.} proposent une architecture multimodale combinant texte, images et concepts pour retrouver des exercices similaires dans un système éducatif en ligne \cite{liu_finding_2018}. BCRNet poursuit une idée comparable en utilisant un apprentissage contrastif pour construire des représentations multimodales d'exercices, avec une dépendance réduite aux paires annotées manuellement \cite{mu_bcrnet_2023}.
+
+Une deuxième famille s'intéresse aux connaissances et aux compétences mobilisées par les 
+exercices. L'objectif n'est plus seulement de comparer les mots utilisés, mais d'identifier 
+les concepts nécessaires à la résolution. Tian \emph{et al.} étudient ainsi l'association 
+automatique entre des exercices et des composants de connaissances (\emph{Knowledge Components}) \cite{tian_automated_2022}. 
+Cette information peut être utile pour recommander à un apprenant un exercice portant sur une 
+compétence donnée, mais elle ne décrit pas nécessairement la démarche algorithmique utilisée 
+pour résoudre le problème.
+
+Une troisième famille exploite les données de performance des apprenants. Deux exercices 
+peuvent être considérés comme proches lorsque les mêmes apprenants réussissent ou échouent 
+sur ces exercices, ou lorsque les temps de résolution et les profils d'erreurs sont comparables.
+ Cette approche peut être pertinente pour la recommandation et le suivi des connaissances, mais
+  elle nécessite un historique suffisant de réponses. Elle est donc difficilement applicable dans
+   un contexte de démarrage à froid. En l'absence d'annotations et de traces d'apprentissage, il 
+   est nécessaire de s'appuyer principalement sur le contenu intrinsèque des exercices \cite{pelanek_measuring_2020}.
+
+Dans le cas particulier des exercices de programmation, la solution de référence constitue une
+ source d'information complémentaire. Elle permet d'observer les structures de contrôle, les 
+ opérations, l'organisation des fonctions et les dépendances entre les instructions. Plusieurs
+  travaux s'intéressent ainsi à l'analyse automatique du code étudiant ou à la comparaison entre
+   une soumission et une solution de référence \cite{vujosevic-janicic_software_2013,xiang_graph_2024}. 
+   Cette orientation est particulièrement intéressante pour notre étude, car deux énoncés peuvent
+    être formulés de manière différente tout en nécessitant une démarche algorithmique proche.
+
+Notre travail se situe dans cette dernière perspective. En l'absence de paires d'exercices 
+annotées et de données de performance, nous retenons principalement les propriétés structurelles
+ des corrections de référence. Les énoncés et les représentations textuelles peuvent fournir un 
+ signal complémentaire, mais le code constitue la source principale pour estimer la proximité 
+ entre les exercices.
+
+
+
+
+
+------------------------------
+Dans ce rapport, l'analyse se concentre donc sur les corrections de référence
+des exercices. Ce choix ne signifie pas que le texte des énoncés ou les
+traces d'apprentissage sont inutiles. Il correspond aux données disponibles
+et permet d'étudier une mesure indépendante du comportement passé des
+apprenants. Les corrections fournissent en effet une description concrète de
+la stratégie attendue : elles rendent observables les structures de contrôle,
+les transformations appliquées aux données et l'organisation générale de la
+solution. Cette information peut être extraite automatiquement à partir du
+code source, notamment au moyen d'arbres syntaxiques et de représentations
+normalisées \cite{baxter_clone_1998,wang_detection_2014}.
+
+La finalité recherchée n'est pas de remplacer le jugement de l'enseignant
+par un score unique. Il s'agit plutôt de produire un indicateur permettant de
+réduire l'espace de recherche et de sélectionner des paires d'exercices à
+examiner. Une mesure de similarité utile dans un EIAH doit ainsi être
+interprétable, suffisamment robuste aux différences de style et capable de
+faire ressortir les caractéristiques pertinentes pour l'apprentissage. Cette
+exigence justifie l'étude conjointe de métriques globales, de comparaisons
+d'arbres syntaxiques et d'une représentation centrée sur les structures de
+contrôle. Ces trois familles d'approches sont présentées dans la suite de
+l'état de l'art, puis adaptées au contexte du projet dans le chapitre
+suivant.
+
+Cette question rejoint également les travaux consacrés à la production de
+rétroactions adaptées aux apprenants. Jolivet \emph{et al.} étudient, dans
+l'environnement AlgoPython, la décision de rétroactions épistémiques à partir
+des erreurs observées dans les productions des étudiants et de leur profil
+d'apprentissage \cite{jolivet_modelisation_2025}. Leur travail montre que la
+rétroaction ne consiste pas seulement à signaler qu'une réponse est fausse :
+elle doit aider l'apprenant à comprendre la nature de son erreur et à choisir
+une piste de progression.
+
+Sur le plan technique, cette approche s'appuie notamment sur la comparaison
+d'un AST correspondant à une production erronée avec un AST de référence.
+Cette comparaison permet de localiser des différences structurelles et de les
+transformer en informations plus lisibles pour l'apprenant
+\cite{jolivet_modelisation_2025}. Même si l'objectif de Jolivet \emph{et al.}
+est la génération de rétroactions et non la recherche d'exercices
+substituables, ce travail confirme l'intérêt d'une représentation
+syntaxique normalisée : elle rend les différences de code observables et
+interprétables. Dans notre cas, cette même propriété est recherchée pour
+comparer les stratégies de résolution de deux corrections et identifier des
+exercices susceptibles de mobiliser des connaissances proches. La similarité
+entre exercices pourrait ainsi constituer, à terme, une information
+complémentaire pour sélectionner une activité de remédiation ou une
+rétroaction adaptée au besoin identifié chez l'apprenant.
+
+
+--------------
+
+
+
+
+
+\paragraph{Représentations vectorielles et modèles appris.}
+
+Les méthodes d'apprentissage automatique transforment le texte ou le code en
+vecteurs denses, appelés \emph{embeddings}. Chaque dimension de ce vecteur ne
+correspond pas nécessairement à une caractéristique directement interprétable,
+mais la distance entre deux vecteurs est censée refléter certains traits
+communs appris par le modèle. La comparaison peut alors être effectuée par
+similarité cosinus, par distance euclidienne ou par un score produit par un
+modèle de classement. Cette représentation permet de comparer rapidement un
+grand nombre d'exercices après avoir calculé une seule fois leur vecteur.
+
+Une première famille de méthodes exploite la structure de l'arbre syntaxique.
+Le modèle code2vec extrait des chemins entre des nœuds de l'AST, représente
+ces chemins sous forme de vecteurs, puis les agrège afin d'obtenir une
+représentation du programme \cite{alon_2019}. Cette approche ne conserve donc
+pas uniquement la séquence des lexèmes : elle prend en compte des relations
+structurelles entre différentes parties du code. Le modèle code2seq reprend
+une idée comparable, mais utilise les chemins de l'AST dans une architecture
+séquence-à-séquence destinée notamment à prédire une description ou une
+séquence de sortie à partir du code \cite{alon_code2seq_2019}. Ces travaux
+montrent qu'un programme peut être représenté à partir de fragments
+structurels plutôt qu'à partir de son seul texte source.
+
+Les modèles pré-entraînés spécialisés dans le code constituent une deuxième
+famille. CodeBERT est entraîné conjointement sur du code et du langage naturel.
+Il peut ainsi apprendre des correspondances entre une implémentation, un
+commentaire, une documentation ou un énoncé \cite{feng_2020}. Dans le cadre
+d'une recherche d'exercices, cette propriété permettrait de comparer soit les
+énoncés entre eux, soit les corrections entre elles, soit les deux modalités
+dans un même espace vectoriel. Elle rend ces modèles intéressants lorsque le
+corpus disponible est suffisamment proche des données sur lesquelles le modèle
+a été entraîné.
+
+Certains modèles cherchent à intégrer plus explicitement les relations
+structurelles du programme. GraphCodeBERT complète la représentation fondée
+sur les tokens par des informations relatives au flot de données entre les
+variables. Ses objectifs d'apprentissage et son mécanisme d'attention utilisent
+ces relations afin de mieux prendre en compte la structure sémantique du code
+\cite{guo_2021}. Cette approche se rapproche donc des représentations par
+graphes présentées précédemment, tout en produisant une représentation
+vectorielle utilisable par des méthodes de comparaison classiques.
+
+Pour comparer deux exercices, plusieurs stratégies sont possibles. Un vecteur
+peut être calculé pour chaque énoncé, chaque correction ou chaque couple
+énoncé--code. Les deux vecteurs sont ensuite rapprochés à l'aide d'une mesure
+de distance. Une autre possibilité consiste à utiliser un modèle siamois :
+deux réseaux partagent leurs paramètres et produisent chacun une représentation
+de l'objet qui leur est fourni. Une fonction de perte apprend alors à rapprocher
+les paires considérées comme similaires et à éloigner les paires différentes.
+L'apprentissage contrastif généralise ce principe en comparant, pour un même
+exemple, des éléments positifs et négatifs dans un espace vectoriel.
+
+Ces méthodes peuvent également combiner plusieurs modalités. Dans le domaine
+des ressources éducatives, BCRNet associe notamment le texte et les images au
+moyen d'une perte contrastive et d'un mécanisme d'appariement texte--image
+\cite{mu_2023}. Une adaptation à la programmation pourrait rapprocher un
+énoncé de sa correction, de captures d'écran de l'interface ou de métadonnées
+pédagogiques. Les représentations apprises offrent ainsi une grande souplesse
+pour la recherche et la recommandation.
+
+Elles présentent toutefois plusieurs limites dans le contexte de ce stage.
+La signification d'une proximité vectorielle dépend des données d'entraînement,
+du modèle choisi et de la manière dont le code est fourni en entrée. Deux
+programmes peuvent obtenir des vecteurs proches sans partager la même
+stratégie algorithmique, tandis que des programmes structurellement proches
+peuvent être éloignés si leur vocabulaire ou leur langage de programmation
+diffère. De plus, l'apprentissage d'une représentation spécifiquement adaptée
+à la substituabilité nécessiterait des paires annotées, précisément absentes du
+corpus étudié. Ces méthodes constituent donc une piste prometteuse pour une
+extension future, mais elles sont moins directement interprétables que les
+mesures structurelles retenues dans ce rapport.
+
+
+---------------------------------
+
+
+\section{Pistes explorées et écartées}
+
+La définition du pipeline retenu est le résultat de plusieurs explorations
+préliminaires. L'objectif de ces essais n'était pas seulement d'obtenir le
+meilleur score possible, mais d'identifier des représentations compatibles
+avec les données réellement disponibles. Ces représentations devaient être
+suffisamment interprétables pour qu'un enseignant puisse comprendre pourquoi
+deux exercices sont rapprochés. Elles devaient aussi être calculables en un
+temps raisonnable et réutilisables sur un corpus d'exercices hétérogène.
+
+Deux contraintes du corpus ont pesé sur l'ensemble de ces choix. D'une part,
+aucune paire d'exercices n'est annotée comme substituable ou non : il n'existe
+pas de vérité terrain. D'autre part, chaque énoncé ne dispose que d'une seule
+correction de référence, ce qui empêche d'observer la variabilité des
+solutions possibles pour un même exercice. Les paragraphes suivants présentent
+les pistes étudiées et les raisons pour lesquelles elles n'ont pas été
+retenues comme méthodes principales.
+
+\paragraph{Comparaison des énoncés par TF--IDF et SBERT.}
+
+Une première piste consistait à comparer directement les textes des énoncés.
+La représentation TF--IDF fournit un point de référence simple et rapide :
+chaque exercice est décrit par un vecteur pondérant les termes qu'il contient
+selon leur fréquence dans l'énoncé et leur rareté dans le corpus, puis les
+vecteurs sont comparés par similarité cosinus. Des représentations denses
+produites par SBERT ont également été considérées. Ce modèle encode chaque
+phrase en un vecteur qui tient compte de son sens, ce qui réduit la
+dépendance au vocabulaire strictement commun.
+
+Ces méthodes fournissent un signal de proximité thématique, mais ce signal ne
+caractérise pas suffisamment la démarche de résolution. Le problème se pose
+dans les deux sens. D'un côté, des énoncés formulés différemment peuvent
+demander le même schéma algorithmique : \og compter les voyelles d'un mot \fg{}
+et \og compter les notes supérieures à 10 \fg{} reposent tous deux sur un
+parcours avec un compteur conditionnel, sans partager de vocabulaire
+significatif. De l'autre, deux énoncés au vocabulaire très proche peuvent
+exiger des solutions structurellement différentes. Par exemple, rechercher un
+élément dans une liste quelconque se fait par un parcours linéaire, alors que
+rechercher un élément dans une liste triée peut se faire par dichotomie. Une
+forte similarité textuelle peut donc produire des faux positifs du point de
+vue algorithmique, et une faible similarité peut masquer de vrais candidats.
+
+Le texte de l'énoncé décrit le \emph{quoi} (la tâche demandée) et non le
+\emph{comment} (la stratégie de résolution), alors que c'est le second aspect
+qui détermine la substituabilité pédagogique étudiée ici. Ces méthodes ont
+donc été conservées comme outils exploratoires, par exemple pour regrouper
+les exercices par thème, mais elles n'ont pas été retenues comme source
+principale de similarité.
+
+\paragraph{Comparaison fondée uniquement sur le comportement.}
+
+Une autre possibilité aurait été d'exécuter les corrections sur des jeux de
+tests et de comparer leurs sorties (approche dite \og boîte noire \fg{}). Cette
+approche est la norme pour vérifier la correction fonctionnelle d'un
+programme, notamment en évaluation automatisée (\emph{autograding}), mais elle
+répond à une question différente de celle étudiée ici.
+
+D'abord, des tests sont propres à un exercice : ils dépendent de la signature
+attendue, du type des entrées et du format des sorties. Comparer les sorties
+de deux exercices différents sur un même jeu de tests n'a donc généralement
+pas de sens, puisque les deux programmes n'attendent pas les mêmes données.
+Deux exercices substituables peuvent ainsi produire des sorties sans rapport
+tout en sollicitant une stratégie comparable. Ensuite, les tests vérifient le
+résultat et non la manière de l'obtenir : une version itérative et une
+version récursive d'un même calcul passent les mêmes tests, alors que leurs
+démarches de résolution, et donc les compétences mobilisées, diffèrent.
+
+Enfin, cette approche impose des contraintes d'ingénierie importantes :
+exécuter du code dans un environnement isolé (\emph{sandboxing}) pour des
+raisons de sécurité, gérer chaque langage et ses dépendances, et construire
+des tests pour chaque exercice. Compte tenu de ce coût et de son inadéquation
+à la question posée, la comparaison comportementale n'a pas été utilisée
+comme mesure principale entre exercices.
+
+\paragraph{Graphes de dépendances et représentations sémantiques riches.}
+
+Les graphes de flot et de dépendances, notamment le graphe de flot de
+contrôle (CFG), le graphe de dépendances de données (DDG), le graphe de
+dépendances de programme (PDG) et le graphe de propriétés de code (CPG), qui
+réunit AST, CFG et PDG dans une même structure, constituent une piste
+intéressante pour représenter le fonctionnement du code. Ils rendent
+explicites les chemins d'exécution et les relations entre les définitions et
+les utilisations des variables. Des outils d'analyse statique comme Joern
+permettent de produire ce type de graphes. Ces représentations pourraient
+donc compléter utilement une représentation fondée sur les AST.
+
+Cette piste n'a toutefois pas été placée au centre du pipeline actuel, pour
+trois raisons. Premièrement, comparer deux graphes est coûteux : le problème
+de l'isomorphisme de sous-graphes est NP-complet, et le calcul exact de la
+distance d'édition entre graphes est NP-difficile. Il faut donc recourir à
+des approximations ou à des noyaux de graphes, dont le comportement est plus
+difficile à interpréter. À l'inverse, la distance d'édition entre arbres
+ordonnés se calcule en temps polynomial, par exemple avec l'algorithme de
+Zhang et Shasha ou APTED. Deuxièmement, la qualité de l'extraction dépend
+fortement du langage, des bibliothèques utilisées et de la résolution des
+appels de fonctions, ce qui complique l'application à un corpus hétérogène.
+Troisièmement, les différences entre deux graphes de grande taille sont
+difficiles à présenter à un enseignant.
+
+Dans un contexte de démarrage à froid, il était donc préférable de commencer
+par des représentations arborescentes plus compactes, plus rapides à comparer
+et dont les différences restent inspectables. Les graphes de dépendances
+restent une perspective d'enrichissement, notamment pour les cas où la
+structure de contrôle ne suffit pas à distinguer deux algorithmes, par
+exemple lorsque deux boucles de même forme manipulent les données de façon
+différente.
+
+\paragraph{Modèles appris et embeddings de code.}
+
+Les modèles pré-entraînés spécialisés dans le code, tels que CodeBERT ou
+GraphCodeBERT (ce dernier intégrant des informations de flot de données lors
+du pré-entraînement), pourraient produire une représentation vectorielle
+dense de chaque correction. Cela permettrait une recherche rapide par plus
+proches voisins dans un corpus important.
+
+Leur utilisation se heurte cependant à la structure du jeu de données.
+Utilisés directement, sans adaptation, ces modèles produisent des proximités
+qui reflètent leurs objectifs de pré-entraînement, par exemple la
+correspondance entre code et langage naturel, et rien ne garantit qu'elles
+correspondent à la notion de substituabilité recherchée. Les adapter
+demanderait des données qui n'existent pas ici. Un réglage fin supervisé
+suppose des paires annotées. Un apprentissage contrastif suppose des paires
+positives fiables : la source la plus naturelle serait plusieurs solutions
+correctes d'un même exercice, or le corpus n'en contient qu'une par énoncé.
+Générer des paires positives artificiellement, par exemple en renommant les
+variables, apprendrait surtout au modèle à ignorer ces transformations
+superficielles, et non à reconnaître deux exercices pédagogiquement
+substituables. S'y ajoutent des contraintes pratiques, comme la limite de
+longueur d'entrée (512 jetons pour les modèles de type BERT) et la couverture
+inégale des langages vus au pré-entraînement.
+
+Enfin, un score issu de la similarité cosinus entre deux vecteurs latents
+n'est pas explicable : il ne permet pas d'indiquer à l'enseignant quelles
+parties du code ont motivé le rapprochement. Ces modèles n'ont donc pas été
+retenus comme approche principale. Ils pourront être évalués ultérieurement
+dans une approche hybride, une fois qu'une vérité terrain, même partielle,
+sera disponible pour vérifier leurs proximités.
+
+\paragraph{Fusion immédiate des signaux.}
+
+Enfin, une fusion directe de toutes les mesures disponibles aurait pu produire
+un score unique combinant texte, métriques globales (profondeur de l'arbre,
+complexité cyclomatique, etc.), AST et structures de contrôle. Cette solution
+aurait simplifié le classement des paires, mais elle pose plusieurs
+problèmes. Elle masque la contribution de chaque représentation : un score
+élevé ne permet plus de savoir s'il provient du texte, de la syntaxe ou de la
+structure de contrôle. Les mesures n'ont pas la même échelle ni la même
+distribution (similarité cosinus, distance d'édition normalisée, écarts entre
+métriques), ce qui impose des choix de normalisation qui influencent
+directement le résultat. Certaines mesures sont aussi corrélées entre elles,
+par exemple la profondeur de l'arbre et l'imbrication des structures de
+contrôle, ce qui reviendrait à compter plusieurs fois la même information.
+Surtout, fixer les pondérations sans vérité terrain ni jugements
+d'enseignants pour les apprendre aurait été arbitraire.
+
+Pour ces raisons, les méthodes sont d'abord étudiées séparément. Leurs
+résultats pourront ensuite être comparés et combinés de manière explicite,
+après analyse de leur comportement sur des variantes contrôlées, c'est-à-dire
+des modifications connues appliquées aux corrections, dont on sait à l'avance
+si elles doivent ou non changer la similarité. Ce choix conduit au pipeline
+présenté dans le chapitre suivant. Celui-ci repose sur trois représentations
+complémentaires des corrections : des caractéristiques globales du code
+(EIIa), des arbres syntaxiques normalisés comparés par distance d'édition
+(TSED) et une représentation centrée sur l'organisation des structures de
+contrôle (NCST). La construction et le calcul précis de chacune de ces
+approches seront détaillés au début du chapitre suivant, avant la
+présentation de leurs résultats expérimentaux.
+
+
+------------------------------------
+
+
+
+% =====================================================================
+% Chapitre : État de l'art et positionnement
+% Prérequis dans le préambule : \usepackage[french]{babel}, amsmath,
+% booktabs, tabularx, hyperref (pour \url).
+% Les entrées \bibitem sont regroupées en fin de fichier : à déplacer dans
+% l'environnement thebibliography de votre document principal.
+% =====================================================================
+
+\chapter{État de l'art et positionnement}
+\label{chap:etat-art}
+
+Ce chapitre situe le travail par rapport aux recherches existantes. Il précise d'abord ce que recouvre la notion de similarité, puis présente la manière dont elle est mobilisée dans les Environnements Informatiques pour l'Apprentissage Humain (EIAH). Il recense ensuite les outils et méthodes employés pour la calculer, en particulier sur du code source, avant de discuter leurs limites. Cette discussion conduit au positionnement retenu pour mesurer la substituabilité d'exercices de programmation.
+
+% ---------------------------------------------------------------------
+\section{Qu'est-ce que la similarité ?}
+\label{sec:similarite}
+
+Dans son sens le plus général, la similarité exprime le degré de ressemblance entre deux objets. Tversky propose de représenter chaque objet par un ensemble de caractéristiques et de décrire la similarité comme une mise en correspondance de ces caractéristiques : la ressemblance entre deux objets $a$ et $b$ dépend des caractéristiques qu'ils partagent, mais aussi de celles qui n'appartiennent qu'à $a$ ou qu'à $b$~\cite{tversky1977}. Cette vision a une conséquence importante : la similarité n'est pas une propriété absolue des objets, elle dépend des caractéristiques que l'on choisit d'observer.
+
+En informatique, cette idée prend la forme d'une \emph{mesure de similarité}, c'est-à-dire une fonction qui associe à une paire d'objets un score, généralement compris entre 0 et 1, d'autant plus élevé que les objets se ressemblent. On lui associe souvent une \emph{mesure de distance} (ou de dissimilarité), qui varie en sens inverse ; on passe de l'une à l'autre par une simple transformation, par exemple $s = 1 - d$ pour une distance normalisée. Pelánek souligne que les mesures utilisées en pratique ne respectent pas toujours les propriétés d'une métrique au sens mathématique (symétrie, inégalité triangulaire, etc.), ce qui doit être pris en compte lorsqu'elles alimentent des algorithmes de regroupement~\cite{pelanek2020overview}. Lorsque les objets sont décrits par des ensembles $A$ et $B$ de caractéristiques, deux mesures classiques sont l'indice de Jaccard et le coefficient de Sørensen--Dice :
+\begin{equation}
+  J(A,B) = \frac{|A \cap B|}{|A \cup B|},
+  \qquad
+  \mathrm{Dice}(A,B) = \frac{2\,|A \cap B|}{|A| + |B|}.
+\end{equation}
+Lorsque les objets sont représentés par des vecteurs numériques $\mathbf{u}$ et $\mathbf{v}$ (fréquences de mots, plongements, métriques), on utilise plutôt la similarité cosinus, $\cos(\mathbf{u},\mathbf{v}) = \frac{\mathbf{u}\cdot\mathbf{v}}{\|\mathbf{u}\|\,\|\mathbf{v}\|}$, ou la corrélation de Pearson~\cite{pelanek2018programming}.
+
+Appliquée au code source, la similarité peut se situer à plusieurs niveaux. La littérature sur les clones de code distingue classiquement quatre types : des fragments identiques à la mise en forme et aux commentaires près (type~1), des fragments syntaxiquement identiques mais dont les identifiants ou littéraux ont été renommés (type~2), des fragments copiés puis modifiés par ajout ou suppression d'instructions (type~3), et enfin des fragments qui réalisent le même calcul avec une syntaxe différente (type~4)~\cite{roy2009clones}. On peut ainsi parler de similarité \emph{textuelle}, \emph{syntaxique} ou \emph{structurelle}, et \emph{sémantique} (ou fonctionnelle). Plus on monte dans ces niveaux, plus la similarité est pertinente pour juger que deux programmes \og font la même chose \fg{}, mais plus elle est difficile à calculer.
+
+Dans un contexte d'apprentissage s'ajoute une dimension supplémentaire, que l'on peut qualifier de \emph{pédagogique}. Deux exercices sont pédagogiquement proches s'ils font travailler les mêmes connaissances, au sens des composantes de connaissance (\emph{knowledge components}) du cadre KLI de Koedinger, Corbett et Perfetti~\cite{koedinger2012kli}, avec un niveau de difficulté comparable. C'est dans ce sens que ce travail emploie la notion de \emph{substituabilité} : un exercice est substituable à un autre s'il peut le remplacer dans un parcours sans modifier ce que l'apprenant est amené à pratiquer. La substituabilité est donc une forme de similarité orientée vers l'usage, qui ne se confond ni avec l'identité textuelle des énoncés, ni avec l'équivalence stricte des programmes.
+
+% ---------------------------------------------------------------------
+\section{Domaine et approches des travaux en similarité dans les EIAH}
+\label{sec:domaine}
+
+Un EIAH désigne un environnement qui intègre des agents humains (apprenant, enseignant, tuteur) et des agents artificiels, et qui leur offre des conditions d'interaction ainsi qu'un accès à des ressources formatives~\cite{tchounikine2002}. Dans ces environnements, la similarité entre ressources, et en particulier entre exercices (appelés \emph{items} dans la littérature anglophone), sert de brique de base à de nombreuses fonctionnalités.
+
+Pelánek recense les principaux usages de la similarité entre items dans les systèmes d'apprentissage adaptatif~\cite{pelanek2020overview}. Elle permet d'abord de \emph{recommander} des exercices : proposer un exercice très proche après une réussite laborieuse, pour consolider, ou un exercice plus éloigné après une réussite facile. Elle sert aussi à choisir un exemple résolu proche à présenter comme indice lorsqu'un apprenant est bloqué. Elle contribue ensuite à la \emph{modélisation du domaine et de l'apprenant}, par exemple pour identifier des composantes de connaissance à partir de groupes d'items semblables. Elle aide enfin à \emph{gérer les banques d'exercices} : repérer les doublons et les items atypiques, visualiser la couverture d'un cours, ou sélectionner des items d'examen proches de ceux qui ont été pratiqués sans en être des copies~\cite{pelanek2020overview}. La substituabilité recherchée dans ce stage relève directement de ces deux derniers usages.
+
+Les mêmes travaux distinguent trois grandes sources de données pour calculer cette similarité~\cite{pelanek2020overview} : le \emph{contenu} des exercices (énoncé, métadonnées, mots-clés ou thèmes), leurs \emph{solutions} (correction de l'auteur ou solutions d'apprenants), et les \emph{données de performance} des apprenants (réussite, nombre de tentatives, temps de résolution). Une approche complémentaire, plus ancienne, repose sur l'expertise humaine : la Q-matrice, issue des travaux de Tatsuoka, décrit chaque item par les attributs (connaissances ou compétences) qu'il requiert~\cite{gierl2007rulespace}. Deux exercices qui partagent les mêmes attributs sont alors considérés comme proches, mais la construction de la matrice demande un travail expert important.
+
+Dans le cas particulier de l'enseignement de la programmation, la similarité a surtout été étudiée sur les programmes des apprenants. OverCode regroupe des milliers de solutions d'étudiants en combinant analyse statique et dynamique, afin que l'enseignant puisse explorer la variété des réponses~\cite{glassman2015overcode}. Piech et al.\ apprennent des représentations vectorielles de programmes pour propager automatiquement un retour de l'enseignant vers des solutions semblables~\cite{piech2015embeddings}. Le tuteur ITAP de Rivers et Koedinger s'appuie sur les solutions passées et sur une abstraction des états du programme pour générer des indices personnalisés~\cite{rivers2017itap}. Enfin, la détection de plagiat, avec des outils comme JPlag~\cite{prechelt2002jplag} ou MOSS~\cite{schleimer2003winnowing}, est l'une des applications les plus répandues de la similarité de code dans les cours de programmation. Plus près de notre problème, Pelánek et al.\ ont comparé, sur des exercices d'initiation en Python et de programmation de robots, des mesures fondées sur les énoncés, sur les solutions et sur les performances~\cite{pelanek2018programming}.
+
+Ces travaux montrent que la similarité entre exercices de programmation peut être abordée par l'énoncé, par la solution ou par l'usage. En revanche, la plupart visent soit des programmes d'apprenants (regroupement, retour, plagiat), soit des systèmes disposant déjà d'un volume important de traces. La comparaison d'exercices à partir de leur seule correction, sans traces ni annotations, est beaucoup moins documentée.
+
+% ---------------------------------------------------------------------
+\section{Quels sont les outils et méthodes utilisés par ces approches ?}
+\label{sec:methodes}
+
+Les méthodes de calcul de similarité peuvent être regroupées selon la représentation de l'objet sur laquelle elles opèrent. Le tableau~\ref{tab:methodes} en propose une synthèse.
+
+\paragraph{Méthodes textuelles.} Lorsqu'on compare des énoncés, l'approche la plus simple consiste à représenter chaque texte par un sac de mots pondéré par TF-IDF, puis à calculer une similarité cosinus. L'analyse sémantique latente (LSA) réduit ensuite la dimension de cet espace pour capturer des associations implicites entre termes~\cite{deerwester1990lsa}. Les modèles récents encodent directement une phrase en un vecteur dense ; Sentence-BERT adapte ainsi BERT pour produire des plongements de phrases comparables par similarité cosinus~\cite{reimers2019sbert}.
+
+\paragraph{Méthodes lexicales sur le code.} Les outils de détection de plagiat découpent les programmes en suites de jetons (\emph{tokens}). JPlag compare les programmes deux à deux et calcule pour chaque paire une valeur de similarité et des régions communes~\cite{prechelt2002jplag}. MOSS repose sur l'algorithme de \emph{winnowing}, qui sélectionne des empreintes représentatives parmi les $k$-grammes d'un document~\cite{schleimer2003winnowing}. La revue systématique de Zakeri-Nasrabadi et al., qui porte sur 136 études, observe que la plupart des techniques évaluent encore la similarité au niveau des jetons, même si des méthodes fondées sur l'apprentissage et des méthodes hybrides apparaissent~\cite{zakeri2023slr}.
+
+\paragraph{Méthodes structurelles.} Ces méthodes s'appuient sur l'arbre syntaxique abstrait (AST) du programme. La distance d'édition d'arbres compte le nombre minimal d'opérations (insertion, suppression, renommage de nœuds) nécessaires pour transformer un arbre en un autre ; Zhang et Shasha en ont proposé un algorithme de référence~\cite{zhang1989ted}. Song et al.\ en dérivent la mesure TSED : le code est analysé avec \texttt{tree-sitter}, la distance d'édition est calculée par l'algorithme APTED, puis normalisée par le nombre de nœuds du plus grand arbre~\cite{song2024tsed} :
+\begin{equation}
+  \mathrm{TSED}(T_1,T_2) = 1 - \frac{\mathrm{TED}(T_1,T_2)}{\max(|T_1|,|T_2|)}.
+\end{equation}
+Pelánek et al.\ utilisent également la distance d'édition d'arbres sur les AST, ou la distance de Levenshtein sur du code canonisé, pour comparer des solutions d'exercices~\cite{pelanek2018programming}. CodeBLEU, conçu pour évaluer la génération de code, combine de son côté la correspondance de $n$-grammes avec une correspondance sur l'AST et sur le flot de données~\cite{ren2020codebleu}.
+
+\paragraph{Méthodes par caractéristiques.} Plutôt que de comparer les programmes directement, on peut les décrire par un vecteur de caractéristiques : présence et fréquence de mots-clés (\texttt{if}, \texttt{while}, \texttt{return}), d'opérateurs ou de constructions du langage, puis appliquer une similarité vectorielle~\cite{pelanek2018programming}. Ces représentations sont simples et interprétables, mais elles perdent l'organisation du programme.
+
+\paragraph{Méthodes par apprentissage.} code2vec représente un fragment de code par un vecteur de taille fixe appris à partir de chemins dans l'AST~\cite{alon2019code2vec}. CodeBERT est un modèle pré-entraîné sur des paires code--langue naturelle dans six langages, dont Python et Java~\cite{feng2020codebert}. Ces plongements permettent de comparer des programmes par similarité cosinus, ou de les regrouper comme dans les travaux de Piech et al.~\cite{piech2015embeddings}.
+
+\paragraph{Méthodes dynamiques et fondées sur les traces.} On peut enfin comparer des programmes par leur comportement, en vérifiant s'ils produisent les mêmes sorties sur un jeu de tests, comme le critère d'\emph{execution match} utilisé comme référence par Song et al.~\cite{song2024tsed}, ou comme le fait en partie OverCode~\cite{glassman2015overcode}. Côté EIAH, les données de performance permettent de calculer une similarité entre items à partir des réponses des apprenants, par exemple par corrélation de Pearson ou coefficient de Yule sur les réussites~\cite{pelanek2020overview}.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \caption{Synthèse des familles de méthodes de similarité.}
+  \label{tab:methodes}
+  \begin{tabularx}{\textwidth}{@{}l X X@{}}
+    \toprule
+    \textbf{Famille} & \textbf{Exemples d'outils et de mesures} & \textbf{Ce qui est comparé} \\
+    \midrule
+    Textuelle      & TF-IDF, LSA, Sentence-BERT & Le vocabulaire et le sens des énoncés \\
+    Lexicale       & JPlag, MOSS (\emph{winnowing}), Jaccard sur jetons & Les suites de jetons du code \\
+    Structurelle   & Distance d'édition d'arbres, APTED, TSED, CodeBLEU & La forme de l'arbre syntaxique \\
+    Caractéristiques & Sac de mots-clés, métriques de code, cosinus & Des indicateurs globaux du programme \\
+    Apprentissage  & code2vec, CodeBERT, plongements de programmes & Des représentations vectorielles apprises \\
+    Dynamique / traces & Tests d'exécution, réussite et temps des apprenants & Le comportement ou l'usage \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+% ---------------------------------------------------------------------
+\section{Discussion sur les limites des méthodes}
+\label{sec:limites}
+
+Aucune de ces familles ne répond seule à la question de la substituabilité pédagogique, car chacune capture un aspect partiel de la similarité.
+
+Les \emph{méthodes textuelles} dépendent de la rédaction des énoncés. Deux consignes peuvent employer un vocabulaire proche pour des tâches différentes, ou décrire la même tâche avec des formulations très éloignées ; un énoncé peut aussi être imprécis ou contenir des éléments d'habillage (contexte, noms de variables) sans lien avec la compétence travaillée. Les essais réalisés au début du stage avec TF-IDF et Sentence-BERT sur les énoncés allaient dans ce sens et ont motivé le choix de comparer plutôt les corrections.
+
+Les \emph{méthodes lexicales} ont été conçues pour détecter des copies. Elles sont robustes aux clones de types~1 et~2, mais deviennent peu fiables dès que deux programmes résolvent le même problème de façon différente~\cite{roy2009clones}. Or deux exercices substituables ont précisément des corrections différentes : elles ne sont pas des copies l'une de l'autre.
+
+Les \emph{méthodes structurelles} sont plus pertinentes, puisqu'elles comparent l'organisation des programmes. Elles restent cependant sensibles à des choix d'écriture sans portée pédagogique (ordre des instructions, découpage en fonctions, nommage), d'où l'intérêt d'une normalisation préalable de l'AST. Song et al.\ montrent aussi que les résultats de TSED dépendent des poids attribués aux opérations d'édition~\cite{song2024tsed}. Enfin, une proximité structurelle n'est pas une preuve d'équivalence sémantique.
+
+Les \emph{méthodes par apprentissage} produisent des représentations riches, mais elles sont peu interprétables et ont été entraînées sur du code professionnel, pour des tâches qui ne sont pas pédagogiques. Leur score est difficile à expliquer à un enseignant, et les adapter demanderait des données annotées.
+
+Les \emph{méthodes dynamiques} et \emph{fondées sur les traces} supposent des ressources souvent absentes. Comparer des sorties exige des jeux de tests communs, ce qui n'a de sens que si les exercices ont la même spécification d'entrées et de sorties. Les mesures fondées sur les performances nécessitent un historique de réponses d'apprenants et souffrent d'un problème de démarrage à froid pour les nouveaux exercices~\cite{pelanek2020overview}.
+
+Enfin, une limite transversale concerne l'\emph{évaluation}. Il n'existe pas de vérité terrain universelle de la similarité entre exercices : Pelánek et al.\ évaluent d'ailleurs les mesures en étudiant leur accord mutuel plutôt qu'en les comparant à une référence~\cite{pelanek2018programming}. Sans paires d'exercices annotées par des enseignants, il est difficile de dire qu'une mesure est \og meilleure \fg{} qu'une autre.
+
+\paragraph{Positionnement.} Ce travail se situe à l'intersection des travaux sur la similarité d'items dans les EIAH et de ceux sur la similarité de code. Il s'en distingue sur trois points. Premièrement, la comparaison porte sur les \emph{corrections} des exercices plutôt que sur leurs énoncés ou sur des solutions d'apprenants, car la correction reflète plus directement les notions mobilisées. Deuxièmement, l'objectif n'est pas de détecter des copies, mais d'estimer si deux exercices peuvent se remplacer dans un parcours. Troisièmement, en l'absence de paires annotées et de traces d'apprenants, l'approche est non supervisée et combine linéairement trois signaux complémentaires extraits du code : TSED sur un AST normalisé pour la structure fine, EIIa pour des métriques globales du programme, et un appariement de nœuds sur l'arbre NCST pour la forme structurelle indépendamment des valeurs concrètes. Le chapitre suivant présente ces trois approches en détail. Les limites évoquées ici, en particulier l'absence de vérité terrain et l'écart possible entre proximité structurelle et équivalence pédagogique, restent valables pour la méthode proposée et sont rediscutées avec les résultats.
+
+% =====================================================================
+% Entrées bibliographiques (à placer dans \begin{thebibliography}{99} ...)
+% =====================================================================
+\iffalse
+\bibitem{tversky1977} A.~Tversky. \newblock Features of similarity. \newblock \emph{Psychological Review}, 84(4):327--352, 1977. \newblock \url{https://cseweb.ucsd.edu/~gary/PAPER-SUGGESTIONS/tversky-psych-rev-1977.pdf}
+
+\bibitem{pelanek2020overview} R.~Pelánek. \newblock Measuring similarity of educational items: An overview. \newblock \emph{IEEE Transactions on Learning Technologies}. \newblock \url{https://www.fi.muni.cz/~xpelanek/publications/similarity-tlt-final.pdf}
+
+\bibitem{pelanek2018programming} R.~Pelánek, T.~Effenberger, M.~Vaněk, V.~Sassmann, D.~Gmiterko. \newblock Measuring item similarity in introductory programming. \newblock In \emph{Proceedings of the Fifth ACM Conference on Learning @ Scale (L@S'18)}, 2018. \newblock \url{https://dl.acm.org/doi/10.1145/3231644.3231676}
+
+\bibitem{roy2009clones} C.~K.~Roy, J.~R.~Cordy, R.~Koschke. \newblock Comparison and evaluation of code clone detection techniques and tools: A qualitative approach. \newblock \emph{Science of Computer Programming}, 74(7):470--495, 2009. \newblock \url{https://research.cs.queensu.ca/home/cordy/Papers/RCK_SCP_Clones.pdf}
+
+\bibitem{koedinger2012kli} K.~R.~Koedinger, A.~T.~Corbett, C.~Perfetti. \newblock The Knowledge-Learning-Instruction framework: Bridging the science-practice chasm to enhance robust student learning. \newblock \emph{Cognitive Science}, 36(5):757--798, 2012. \newblock \url{http://pact.cs.cmu.edu/pubs/Koedinger,%20Corbett,%20Perfetti%202012-KLI.pdf}
+
+\bibitem{tchounikine2002} P.~Tchounikine. \newblock Pour une ingénierie des Environnements Informatiques pour l'Apprentissage Humain. \newblock LIUM, Université du Maine. \newblock \url{https://lig-membres.imag.fr/tchounikine/Articles/PNER2002.pdf}
+
+\bibitem{gierl2007rulespace} M.~J.~Gierl, J.~P.~Leighton, S.~M.~Hunka. \newblock Exploring the logic of Tatsuoka's rule-space model for test development and analysis. \newblock \emph{Educational Measurement: Issues and Practice}, ITEMS Module 20. \newblock \url{https://ncme.org/wp-content/uploads/2025/10/Module-20-Rule-space-Methodology-Gierl-Leighton-1.pdf}
+
+\bibitem{glassman2015overcode} E.~L.~Glassman, J.~Scott, R.~Singh, P.~J.~Guo, R.~C.~Miller. \newblock OverCode: Visualizing variation in student solutions to programming problems at scale. \newblock \emph{ACM Transactions on Computer-Human Interaction}, 22(2), 2015. \newblock \url{https://www.microsoft.com/en-us/research/publication/overcode-visualizing-variation-in-student-solutions-to-programming-problems-at-scale/}
+
+\bibitem{piech2015embeddings} C.~Piech, J.~Huang, A.~Nguyen, M.~Phulsuksombati, M.~Sahami, L.~Guibas. \newblock Learning program embeddings to propagate feedback on student code. \newblock In \emph{Proceedings of ICML}, PMLR 37, 2015. \newblock \url{https://proceedings.mlr.press/v37/piech15.pdf}
+
+\bibitem{rivers2017itap} K.~Rivers, K.~R.~Koedinger. \newblock Data-driven hint generation in vast solution spaces: A self-improving Python programming tutor. \newblock \emph{International Journal of Artificial Intelligence in Education}, 27:37--64, 2017. \newblock \url{https://link.springer.com/article/10.1007/s40593-015-0070-z}
+
+\bibitem{prechelt2002jplag} L.~Prechelt, G.~Malpohl, M.~Philippsen. \newblock Finding plagiarisms among a set of programs with JPlag. \newblock \emph{Journal of Universal Computer Science}, 8(11):1016--1038, 2002. \newblock \url{https://www.jucs.org/jucs_8_11/finding_plagiarisms_among_a/Prechelt_L.html}
+
+\bibitem{schleimer2003winnowing} S.~Schleimer, D.~S.~Wilkerson, A.~Aiken. \newblock Winnowing: Local algorithms for document fingerprinting. \newblock In \emph{Proceedings of ACM SIGMOD}, 2003. \newblock \url{https://sschleimer.warwick.ac.uk/Maths/winnowing.html}
+
+\bibitem{deerwester1990lsa} S.~Deerwester, S.~T.~Dumais, G.~W.~Furnas, T.~K.~Landauer, R.~Harshman. \newblock Indexing by latent semantic analysis. \newblock \emph{Journal of the American Society for Information Science}, 41(6):391--407, 1990. \newblock \url{https://eric.ed.gov/?id=EJ415308}
+
+\bibitem{reimers2019sbert} N.~Reimers, I.~Gurevych. \newblock Sentence-BERT: Sentence embeddings using Siamese BERT-networks. \newblock In \emph{Proceedings of EMNLP-IJCNLP}, 2019. \newblock \url{https://arxiv.org/abs/1908.10084}
+
+\bibitem{zakeri2023slr} M.~Zakeri-Nasrabadi, S.~Parsa, M.~Ramezani, C.~K.~Roy, M.~Ekhtiarzadeh. \newblock A systematic literature review on source code similarity measurement and clone detection: Techniques, applications, and challenges. \newblock \emph{Journal of Systems and Software}, 204, 2023. \newblock \url{https://www.sciencedirect.com/science/article/abs/pii/S0164121223001917}
+
+\bibitem{zhang1989ted} K.~Zhang, D.~Shasha. \newblock Simple fast algorithms for the editing distance between trees and related problems. \newblock \emph{SIAM Journal on Computing}, 18(6):1245--1262, 1989. \newblock \url{https://www.semanticscholar.org/paper/Simple-Fast-Algorithms-for-the-Editing-Distance-and-Zhang-Shasha/277ff0c74cc72663d0aabbeae25a3e97b245457c}
+
+\bibitem{song2024tsed} Y.~Song, C.~Lothritz, D.~Tang, T.~F.~Bissyandé, J.~Klein. \newblock Revisiting code similarity evaluation with abstract syntax tree edit distance. \newblock In \emph{Proceedings of ACL 2024 (Short Papers)}, 2024. \newblock \url{https://arxiv.org/abs/2404.08817}
+
+\bibitem{ren2020codebleu} S.~Ren, D.~Guo, S.~Lu, L.~Zhou, S.~Liu, D.~Tang, N.~Sundaresan, M.~Zhou, A.~Blanco, S.~Ma. \newblock CodeBLEU: A method for automatic evaluation of code synthesis. \newblock arXiv:2009.10297, 2020. \newblock \url{https://arxiv.org/abs/2009.10297}
+
+\bibitem{alon2019code2vec} U.~Alon, M.~Zilberstein, O.~Levy, E.~Yahav. \newblock code2vec: Learning distributed representations of code. \newblock \emph{Proceedings of the ACM on Programming Languages (POPL)}, 2019. \newblock \url{https://arxiv.org/abs/1803.09473}
+
+\bibitem{feng2020codebert} Z.~Feng, D.~Guo, D.~Tang, N.~Duan, X.~Feng, M.~Gong, L.~Shou, B.~Qin, T.~Liu, D.~Jiang, M.~Zhou. \newblock CodeBERT: A pre-trained model for programming and natural languages. \newblock In \emph{Findings of EMNLP}, 2020. \newblock \url{https://github.com/microsoft/CodeBERT}
+\fi
+
+
+
+-------------------------------
+
+
+\section{Pistes explorées et écartées}
+
+La définition du pipeline retenu n'est pas qu'un choix théorique, elle est le résultat de plusieurs expérimentations empiriques menées directement sur les données de la plateforme PLaTon. L'objectif était d'éprouver techniquement différentes représentations face à deux contraintes strictes de notre corpus : l'absence totale de vérité terrain (aucune paire d'exercices n'est annotée comme substituable) et la présence d'une unique correction de référence par énoncé (empêchant d'observer nativement la variabilité des solutions). 
+
+La figure~\ref{fig:impasses_techno} synthétise visuellement les principales pistes étudiées au cours du stage et les verrous ayant justifié leur mise à l'écart.
+
+\begin{figure}[H]
+    \centering
+    \resizebox{0.95\textwidth}{!}{%
+    \begin{tikzpicture}[
+        >=Stealth,
+        node distance=1.2cm and 2cm,
+        famille/.style={draw=blue!80!black, thick, rounded corners, fill=blue!5, align=center, text width=4.2cm, minimum height=1.2cm, font=\small\bfseries},
+        verrou/.style={draw=red!80!black, dashed, fill=red!5, align=center, text width=5.5cm, minimum height=1cm, font=\footnotesize},
+        fleche/.style={->, line width=1.2pt, color=gray!70!black}
+    ]
+    
+    % Noeuds Familles
+    \node[famille] (nlp) {Analyse Textuelle \& M1\\ (SBERT, TF-IDF)};
+    \node[famille, below=of nlp] (ast_brut) {Arbres \& Profils bruts\\ (AST, Indice de Jaccard)};
+    \node[famille, below=of ast_brut] (graphe) {Graphes Purs (Joern)\\ \& CSSG};
+    \node[famille, below=of graphe] (contrastif) {Apprentissage Contrastif\\ (Architecture BCRNet)};
+    
+    % Noeuds Verrous
+    \node[verrou, right=of nlp] (v_nlp) {Mirage du vocabulaire\\ (Ex: \texttt{set} vs \texttt{list})};
+    \node[verrou, right=of ast_brut] (v_ast_brut) {Sensibilité extrême au style\\ (Ex: réordonnancement d'instructions)};
+    \node[verrou, right=of graphe] (v_graphe) {Coût NP-difficile (GEDLIB)\\ \& Bruit sémantique interne};
+    \node[verrou, right=of contrastif] (v_contrastif) {Absence de paires positives\\ \& Effet "Boîte noire"};
+    
+    % Liaisons
+    \draw[fleche] (nlp) -- node[above, font=\scriptsize, color=gray!90!black]{relégué en filtre car} (v_nlp);
+    \draw[fleche] (ast_brut) -- node[above, font=\scriptsize, color=gray!90!black]{nécessite normalisation car} (v_ast_brut);
+    \draw[fleche] (graphe) -- node[above, font=\scriptsize, color=gray!90!black]{rejeté car} (v_graphe);
+    \draw[fleche] (contrastif) -- node[above, font=\scriptsize, color=gray!90!black]{rejeté car} (v_contrastif);
+    
+    \end{tikzpicture}%
+    }
+    \caption{Synthèse des expérimentations menées durant le stage et de leurs verrous technologiques.}
+    \label{fig:impasses_techno}
+\end{figure}
+
+Les paragraphes suivants détaillent le déroulement de ces expérimentations et les conclusions qui en ont été tirées.
+
+\paragraph{Héritage des travaux de M1 et limites du "Tout-Sémantique".}
+Dans la continuité des travaux d'Adel \textsc{Ziani} (stage de M1), nous avons d'abord constaté que l'étiquetage libre, puis par modèle génératif, produisait des résultats incohérents. L'utilisation de modèles comme CodeBERT ne permettait pas de distinguer formellement un exercice "trop proche" d'un exercice "assez proche", et l'application brute de l'algorithme de Zhang-Shasha se révélait trop stricte.
+Nous avons ensuite approfondi l'analyse textuelle via TF-IDF et SBERT. Si SBERT fournit un bon signal de proximité thématique, il souffre d'un "mirage lexical". Par exemple, exiger l'utilisation d'un \texttt{set} au lieu d'une \texttt{list} modifie à peine le vecteur SBERT, alors que la démarche algorithmique change radicalement. De même, des consignes implicites telles que \textquote{faites comme l'exercice précédent} faussent totalement le calcul. Ces méthodes ont donc été conservées uniquement comme filtres exploratoires.
+
+\paragraph{L'AST brut, l'indice de Jaccard et le réordonnancement.}
+Pour analyser la structure, nous avons extrait les AST bruts. Nos tests sur 11 variantes (55 paires) ont montré que la distance d'édition classique (ZSS) sur un AST brut est beaucoup trop punitive. Par exemple, le simple réordonnancement d'instructions indépendantes (testé lors de nos essais d'augmentation de données) faisait chuter artificiellement la similarité. 
+Pour pallier cette rigidité séquentielle, l'extraction d'un profil structurel (comptage des types de nœuds) comparé via l'indice de Jaccard a été expérimentée. Si Jaccard fournit un filtre macroscopique rapide pour vérifier que deux programmes utilisent les mêmes structures globales, il reste totalement aveugle à la hiérarchie et à l'ordre d'exécution, limitant sa pertinence pour évaluer une véritable stratégie de résolution.
+
+\paragraph{Graphes de dépendances via Joern et CSSG.}
+Afin de capturer le flux de données, nous avons extrait des CPG, CFG, DDG et PDG à l'aide de l'outil Joern. Nous avons implémenté une comparaison basée sur les graphes sémantiques (CSSG) et la bibliothèque GEDLIB.
+Les premiers tests ont été décevants : sur nos variantes contrôlées, la similarité moyenne s'effondrait face à de simples changements de boucles (ex: substitution d'un \texttt{while} par un \texttt{for}). Cette chute inexpliquée trouve son origine dans la façon dont Joern modélise les itérateurs en Python (appels implicites à \texttt{\_\_iter\_\_} et \texttt{\_\_next\_\_}), générant un bruit sémantique massif. Ajouté au coût de calcul de la distance d'édition de graphes (problème NP-difficile), cette piste a été jugée trop instable et coûteuse pour notre corpus.
+
+\paragraph{Apprentissage contrastif multimodal (Architecture en Y).}
+Pour s'affranchir des règles manuelles, nous avons conçu une architecture en "Y" inspirée de BCRNet (combinant un encodeur SBERT pour le texte, un réseau de neurones sur graphes pour le code, et une fusion par triplets). 
+Cette piste ambitieuse a été stoppée par la réalité de nos données. L'apprentissage contrastif exige des paires positives fiables. Le corpus ne contenant qu'une correction par énoncé, la génération artificielle de paires positives (par renommage de variables) entraînait le modèle à ignorer des transformations de surface, mais ne lui apprenait pas ce qu'est la substituabilité pédagogique. De plus, la sortie d'un tel réseau, essentiellement binaire ou sous forme de vecteur latent, est ininterprétable ("boîte noire"), ce qui interdit toute rétroaction épistémique à l'enseignant.
+
+\paragraph{Traces de performance et Preuves formelles.}
+Les approches comportementales, telles que la corrélation de Spearman évaluée par Barollet \cite{barollet_2023}, ont été écartées face au problème de \emph{cold-start} décrit par Pelánek \cite{pelanek_2020} (absence de traces d'étudiants). À l'autre extrême, la vérification formelle par induction (Milovančević \cite{milovancevic_automated_nodate}) s'est révélée trop stricte, prouvant une équivalence mathématique absolue là où nous cherchons une simple tolérance pédagogique.
+
+\vspace{0.5cm}
+
+\textbf{Conclusion et harmonisation du pipeline :}\\
+L'étude critique du système CMGA (qui utilise un SDG trop lourd mais propose des idées intéressantes comme l'inlining) nous a orientés vers une solution intermédiaire. Plutôt que d'opérer une fusion immédiate et arbitraire des signaux --- une approche risquée sans vérité terrain pour ajuster les pondérations --- nous avons choisi de structurer notre méthode en trois métriques explicables, extraites via Tree-sitter :
+\begin{enumerate}
+    \item Une mesure globale des caractéristiques (\textbf{EIIa}).
+    \item Une comparaison d'AST fortement normalisés (\textbf{TSED}).
+    \item Un arbre réduit centré sur les structures de contrôle (\textbf{NCST}).
+\end{enumerate}
+Bien que la finalité d'un tel système soit de proposer une combinaison (linéaire ou par seuils) de ces signaux, \textbf{ces trois scores seront d'abord étudiés et calibrés séparément} dans ce rapport. Ce n'est qu'en comprenant le comportement individuel de EIIa, de TSED et du NCST face à nos variantes contrôlées que nous pourrons, à terme, justifier leur fusion.
+
+
+--------------------------------------------------------------
+
+
+
+
+
+
+\chapter{Ma proposition}
+
+Ce chapitre présente le pipeline multi-niveaux développé pour évaluer la
+substituabilité algorithmique entre des exercices de programmation. L'objectif
+n'est pas de réduire la similarité à une seule propriété du code, mais de
+comparer les corrections selon trois niveaux d'abstraction complémentaires :
+la structure globale, la topologie syntaxique détaillée et l'organisation des
+structures de contrôle.
+
+\section{Architecture globale du pipeline}
+
+Pour chaque paire de programmes $(A,B)$, le pipeline extrait trois
+représentations indépendantes et calcule trois mesures distinctes :
+
+\begin{enumerate}
+    \item l'\textbf{EIIA}, qui compare des profils globaux fondés sur la
+    structure syntaxique générale ;
+    \item le \textbf{TSED}, calculé sur des AST normalisés afin d'évaluer
+    finement la topologie syntaxique ;
+    \item le \textbf{NCST}, qui isole les structures et les flux de contrôle
+    afin de comparer le squelette algorithmique.
+\end{enumerate}
+
+Ces trois mesures sont calculées séparément pour chaque paire. Le pipeline
+produit donc trois scores indépendants, chacun décrivant une dimension
+particulière de la ressemblance entre les programmes. Cette organisation
+multi-vues, proche des analyses combinant plusieurs dimensions de la
+similarité, permet notamment de repérer les cas où deux corrections ont une
+complexité globale proche, mais des stratégies de contrôle différentes.
+Cette complémentarité est cohérente avec les travaux qui distinguent la
+similarité de contenu, de structure et de finalité pédagogique
+\cite{pelanek_2020,reddy_graph-based_2025}.
+
+La chaîne de traitement est organisée selon le schéma suivant : le code
+source est d'abord analysé par Tree-sitter afin de produire un AST brut. Cet
+arbre alimente ensuite trois branches parallèles : l'extracteur de profils
+EIIA, le normaliseur d'AST suivi du calcul TSED, et le filtre NCST suivi de
+l'appariement des structures de contrôle. Les trois scores sont finalement
+exportés séparément.
+
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        >=Stealth,
+        node distance=1.5cm and 0.5cm,
+        process/.style={rectangle, draw=black, thick, fill=blue!10,
+            text width=3cm, align=center, minimum height=1cm,
+            rounded corners},
+        data/.style={cylinder, draw=black, thick, fill=gray!10,
+            text width=2.5cm, align=center, minimum height=1cm,
+            shape border rotate=90, aspect=0.25},
+        score/.style={rectangle, draw=black, thick, fill=green!10,
+            text width=2.2cm, align=center, minimum height=0.8cm},
+        arrow/.style={->, thick}
+    ]
+        \node[data] (source) {Code source\\(Python)};
+        \node[process, below=of source] (parser) {Parseur\\(Tree-sitter)};
+        \node[data, below=of parser] (ast) {Arbre syntaxique\\abstrait (AST)};
+
+        \node[process, fill=orange!10, below left=1.5cm and 1cm of ast]
+            (eiia) {Extracteur de profil\\(EIIA)};
+        \node[process, fill=orange!10, below=1.5cm of ast]
+            (tsed) {Normaliseur AST\\+ appariement (TSED)};
+        \node[process, fill=orange!10, below right=1.5cm and 1cm of ast]
+            (ncst) {Filtre NCST\\+ appariement};
+
+        \node[score, below=1cm of eiia] (score1) {Score $S_{\mathrm{EIIA}}$};
+        \node[score, below=1cm of tsed] (score2) {Score $S_{\mathrm{TSED}}$};
+        \node[score, below=1cm of ncst] (score3) {Score $S_{\mathrm{NCST}}$};
+
+        \draw[arrow] (source) -- (parser);
+        \draw[arrow] (parser) -- (ast);
+        \draw[arrow] (ast) -- (eiia);
+        \draw[arrow] (ast) -- (tsed);
+        \draw[arrow] (ast) -- (ncst);
+        \draw[arrow] (eiia) -- (score1);
+        \draw[arrow] (tsed) -- (score2);
+        \draw[arrow] (ncst) -- (score3);
+    \end{tikzpicture}%
+    }
+    \caption{Architecture globale du pipeline d'évaluation de la similarité
+    multi-niveaux.}
+    \label{fig:pipeline_global}
+\end{figure}
+\vfill
+
+
+\section{Évaluation de l'information indépendante de l'arbre (EIIA)}
+
+L'EIIA fournit une mesure macroscopique de la proximité entre deux programmes.
+Elle repose sur un profil structurel extrait en parcourant l'ensemble des
+nœuds de leur arbre syntaxique abstrait. Pour un programme $A$, le profil est
+représenté par le vecteur à neuf composantes :
+
+\begin{equation}
+V_A = (n_{\mathrm{nodes}}, n_{\mathrm{operators}},
+n_{\mathrm{operands}}, n_{\mathrm{assignments}}, n_{\mathrm{selections}},
+n_{\mathrm{iterations}}, d_{\max}, n_{\mathrm{calls}}, n_{\mathrm{returns}}).
+\end{equation}
+
+Ces composantes correspondent respectivement au nombre total de nœuds, aux
+opérateurs, aux opérandes, aux affectations, aux structures de sélection comme
+`IF' et `ELIF', aux itérations comme `FOR' et `WHILE', à la profondeur maximale
+de l'AST, aux appels de fonction et aux instructions `RETURN'.
+
+La distance euclidienne entre les profils de deux programmes est définie par :
+
+\begin{equation}
+d(V_A,V_B) = \lVert V_A - V_B \rVert_2.
+\end{equation}
+
+Cette distance est normalisée par la norme maximale des deux profils :
+
+\begin{equation}
+d_{\mathrm{norm}}(A,B) =
+\frac{d(V_A,V_B)}{\max\left(\lVert V_A \rVert_2,
+\lVert V_B \rVert_2,\varepsilon\right)},
+\qquad \varepsilon = 10^{-12}.
+\end{equation}
+
+Le score EIIA est alors obtenu par :
+
+\begin{equation}
+S_{\mathrm{EIIA}}(A,B) = \max\left(0,1-d_{\mathrm{norm}}(A,B)\right).
+\end{equation}
+
+Le score appartient à l'intervalle $[0,1]$. Cette approche s'inscrit dans la
+famille des métriques statiques qui décrivent la taille et la complexité d'un
+programme sans nécessiter l'alignement de deux arbres ou graphes
+\cite{messer_2024}. Des travaux consacrés à l'évaluation de la difficulté et
+de l'effort de programmation montrent également que des métriques telles que
+la taille du code et la complexité cyclomatique peuvent être corrélées à un
+indice d'effort interne, l'\emph{Index of Internal Effort} (IIE)
+\cite{de_oliveira_assessing_2024}. Cette observation soutient l'utilisation
+de profils quantitatifs comme indicateurs de complexité, sans établir pour
+autant une équivalence entre l'EIIA et l'IIE. L'EIIA constitue ainsi un indicateur de la
+proximité globale d'architecture et de complexité, sans prétendre décrire à
+lui seul la stratégie algorithmique détaillée.
+
+\section{AST normalisé et distance TSED}
+
+La deuxième approche évalue la structure grammaticale détaillée du code. Le
+code Python est d'abord analysé avec Tree-sitter, puis converti en un AST
+simplifié. Une phase de normalisation réduit l'influence des choix de style
+et des détails formels qui ne modifient pas la logique de résolution.
+
+La normalisation vise ainsi à comparer la logique algorithmique plutôt que les
+conventions de nommage ou les choix d'écriture. Elle transforme les deux
+arbres avant le calcul de la distance d'édition.
+
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        node distance=1.2cm and 1.5cm,
+        tree/.style={rectangle, draw=black, thick, rounded corners,
+            align=center, minimum width=2.5cm, minimum height=0.8cm},
+        detail/.style={rectangle, draw=gray, fill=red!10, dashed,
+            align=center, minimum width=1.7cm, minimum height=0.55cm},
+        arrow/.style={->, thick, blue}
+    ]
+        \node[tree, fill=blue!15] (before) {AST brut\\\small ASSIGN};
+        \node[detail, below left=of before] (name) {a};
+        \node[detail, below right=of before] (literal) {10};
+        \draw (before) -- (name);
+        \draw (before) -- (literal);
+
+        \node[tree, right=2.4cm of before, fill=orange!15]
+            (normalizer) {Normalisation\\\small renommage + abstraction};
+        \draw[arrow] (before) -- (normalizer);
+
+        \node[tree, right=2.4cm of normalizer, fill=green!15]
+            (after) {AST normalisé\\\small ASSIGN};
+        \node[detail, below left=of after] (var) {VAR\_1};
+        \node[detail, below right=of after] (num) {NUM};
+        \draw (after) -- (var);
+        \draw (after) -- (num);
+        \draw[arrow] (normalizer) -- (after);
+    \end{tikzpicture}%
+    }
+    \caption{Processus d'abstraction et de normalisation de l'arbre syntaxique
+    abstrait.}
+    \label{fig:normalisation_ast}
+\end{figure}
+
+La normalisation comprend les opérations suivantes :
+
+\begin{itemize}
+    \item l'\textbf{anonymisation canonique} des variables locales, des
+    paramètres et des fonctions auxiliaires, respectivement remplacés par des
+    identifiants génériques comme `VAR\_1', `PARAM\_1' et `FUNC\_1' ;
+    \item l'\textbf{abstraction des littéraux}, qui remplace les valeurs
+    concrètes par des catégories telles que `NUM' ou `STR' ;
+    \item l'\textbf{uniformisation structurelle}, qui développe les
+    affectations augmentées comme `a += b' en une forme canonique et peut
+    résoudre certaines fonctions auxiliaires simples par inlining.
+\end{itemize}
+
+Les opérateurs, tels que `+', `%', ou `==', ainsi que les structures de
+contrôle sont conservés, car ils portent une information importante sur la
+stratégie de résolution. Les commentaires sont supprimés lors de la
+conversion de l'arbre.
+
+La distance TSED correspond à la distance d'édition entre les deux arbres
+normalisés, selon le principe de Zhang et Shasha
+\cite{zhang_simple_1989,song_revisiting_2024}. Chaque nœud est décrit par un label associant son type sémantique
+à sa valeur résiduelle, par exemple `BINARY\_OP(+)' ou
+`IDENTIFIER(VAR\_1)'. Les coûts d'insertion, de suppression et de
+substitution sont unitaires ; le coût de substitution vaut donc $1$ lorsque
+les labels diffèrent.
+
+Si $TED(A,B)$ désigne la distance d'édition et $|A|$ et $|B|$ le nombre de
+nœuds des deux arbres, le score est défini par :
+
+\begin{equation}
+S_{\mathrm{TSED}}(A,B) =
+1 - \frac{TED(A,B)}{\max\left(|A|,|B|\right)}.
+\end{equation}
+
+Dans le cas de programmes modulaires, le système sélectionne automatiquement
+la fonction dont l'AST est le plus vaste afin de comparer en priorité la
+fonction centrale de la correction.
+
+\section{Squelette algorithmique et arbre NCST}
+
+La troisième approche extrait l'organisation logique du programme en isolant
+les structures qui déterminent le flux de contrôle. Deux AST peuvent être
+différents tout en présentant un squelette algorithmique proche lorsqu'ils
+partagent la même séquence d'imbrications et de décisions.
+
+Le NCST ne cherche donc pas à conserver toute l'information syntaxique. Il
+isole les nœuds qui décrivent les décisions, les répétitions, les exceptions
+et les transferts, puis préserve leurs relations d'imbrication.
+
+Le NCST (\emph{Normalized Control Structure Tree}) est construit à partir de
+l'AST global par un filtrage qui supprime les expressions, les affectations et
+les détails syntaxiques. Sont conservés les nœuds représentant directement le
+contrôle de flux :
+
+\begin{itemize}
+    \item les itérations (`ITERATION') ;
+    \item les sélections (`SELECTION') ;
+    \item les exceptions (`EXCEPTION') ;
+    \item les transferts (`TRANSFER') ;
+    \item les séquences d'encapsulation comme `PROGRAM' et `FUNCTION'.
+\end{itemize}
+
+La puissance descriptive de cette représentation peut être illustrée par
+deux fonctions dont les expressions et les valeurs manipulées sont
+différentes. Le premier programme recherche un nombre pair, tandis que le
+second recherche une valeur cible. Malgré cette différence de domaine, les
+deux solutions parcourent une collection, testent une condition puis
+retournent immédiatement un résultat en cas de succès, avant d'effectuer un
+retour par défaut. Après élagage des expressions, leur squelette de contrôle
+est donc identique.
+
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        >=Stealth,
+        level distance=1.05cm,
+        sibling distance=1.8cm,
+        codebox/.style={rectangle, draw=black, thick, fill=gray!10,
+            font=\ttfamily\scriptsize, text width=5.0cm, align=left,
+            inner sep=6pt, rounded corners},
+        ncstnode/.style={rectangle, draw=black, thick, fill=blue!15,
+            font=\sffamily\scriptsize, align=center, rounded corners,
+            minimum width=1.8cm, minimum height=0.6cm},
+        arrow/.style={->, ultra thick, blue!80!black}
+    ]
+        \node[codebox] (codeA) {\textbf{Code A}\\[2pt]
+        def find\_even(numbers):\\
+        \quad for n in numbers:\\
+        \quad\quad if n \% 2 == 0:\\
+        \quad\quad\quad return n\\
+        \quad return -1};
+
+        \node[codebox, below=0.7cm of codeA] (codeB) {\textbf{Code B}\\[2pt]
+        def search\_target(array, target):\\
+        \quad for element in array:\\
+        \quad\quad if element == target:\\
+        \quad\quad\quad return True\\
+        \quad return False};
+
+        \node[draw=none, right=1.3cm of codeA.south east] (junction) {};
+        \draw[arrow] (codeA.east) -- ++(0.7,0) |- (junction.center);
+        \draw[arrow] (codeB.east) -- ++(0.7,0) |- (junction.center);
+        \node[draw=none, fill=white, text=black, font=\scriptsize\itshape,
+            above=0.08cm of junction] {extraction NCST};
+
+        \begin{scope}[shift={(9.0,-1.15)}]
+            \node[ncstnode] (commonroot) {FUNCTION}
+                child {node[ncstnode] (commonloop) {ITERATION}
+                    child {node[ncstnode] (commonselection) {SELECTION}
+                        child {node[ncstnode] (commonreturn) {TRANSFER}}
+                    }
+                }
+                child {node[ncstnode] (commonfallback) {TRANSFER}};
+            \node[draw, dotted, thick, fit=(commonroot) (commonfallback),
+                inner sep=0.35cm, label=above:\textbf{NCST commun}]
+                (commonbox) {};
+            \node[draw=none, below=0.25cm of commonbox,
+                font=\small\bfseries] {$S_{\mathrm{NCST}}=1$};
+        \end{scope}
+
+        \draw[arrow] (junction.center) -- ++(1.6,0) -| (commonbox.west);
+    \end{tikzpicture}%
+    }
+    \caption{Invariance du NCST sur deux programmes différents. Les codes A
+    et B utilisent des variables, des opérateurs et des valeurs de retour
+    distincts, mais leur élagage produit la même topologie de contrôle.}
+    \label{fig:ncst_equivalence}
+\end{figure}
+
+Dans cet exemple, le score $S_{\mathrm{NCST}}=1$ exprime une correspondance
+parfaite du squelette conservé par la représentation. Il ne signifie pas que
+les deux fonctions sont équivalentes du point de vue de leur résultat, mais
+qu'elles partagent une même organisation de résolution : itération, test,
+retour anticipé et retour par défaut.
+
+L'arbre conserve l'ordre et la hiérarchie du code. Le niveau (`level') d'un
+nœud est incrémenté lorsqu'il entre dans un bloc structurel comme `BODY',
+`THEN' ou `CATCH'.
+
+Le calcul de similarité repose sur un appariement ordonné. Deux nœuds peuvent
+être associés s'ils possèdent le même type (`kind'), le même niveau
+d'imbrication et un ordre séquentiel compatible. Si $M$ désigne le nombre de
+nœuds appariés, le score NCST est calculé avec l'indice de Sørensen-Dice :
+
+\begin{equation}
+S_{\mathrm{NCST}}(A,B) =
+\frac{2M}{|A|+|B|}.
+\end{equation}
+
+Un score égal à $1$ indique une correspondance topologique parfaite des
+structures de contrôle conservées.
+
+\section{Exécution et synthèse des mesures}
+
+Le pipeline ne fusionne pas artificiellement les trois mesures au moyen d'une
+moyenne pondérée. Elles décrivent des dimensions orthogonales de la
+similarité logicielle et leur combinaison prématurée masquerait la
+contribution de chaque représentation.
+
+Pour chaque paire de programmes, le système exporte donc séparément les trois
+scores $S_{\mathrm{EIIA}}$, $S_{\mathrm{TSED}}$ et $S_{\mathrm{NCST}}$. Cette
+sortie conserve une information interprétable sur la nature de la proximité.
+Par exemple, deux exercices peuvent obtenir un score EIIA élevé, signe d'une
+architecture globale comparable, tout en présentant un score NCST faible,
+indiquant une divergence dans leur logique de contrôle. Les trois colonnes
+permettent ainsi d'analyser séparément les dimensions de la substituabilité
+algorithmique avant toute interprétation pédagogique.
+
+\section{Protocole d'évaluation des approches}
+
+Les trois scores sont d'abord calculés sur des variantes contrôlées, obtenues
+en appliquant une transformation identifiée à une correction de référence.
+Cette étape permet d'observer séparément la sensibilité de chaque mesure à un
+renommage, à une modification de structure de contrôle ou à une transformation
+de l'organisation du code. Les résultats sont ensuite produits sur le corpus
+complet afin d'étudier la distribution des scores et les paires candidates
+pour une analyse pédagogique.
+
+Les mesures ne sont pas interprétées comme une vérité terrain automatique. La
+comparaison porte d'abord sur leur comportement attendu face aux variantes,
+puis sur leur complémentarité. Les cas où les scores divergent sont conservés
+comme des situations informatives : ils permettent d'identifier la dimension
+de la similarité capturée par chaque approche et de préparer une validation
+ultérieure par un enseignant.
+
+
+\chapter{Résultats expérimentaux}
+
+\section{Constitution du corpus et variantes contrôlées }
+
+\subsection{Résultats préliminaires sur les énoncés}
+
+
+\section{Résultats sur les variantes contrôlées}
+
+\subsection{Résultats sur les variantes contrôlées}
+\subsection{EIIA : attendus et observés}
+\subsection{TSED : attendus et observés}
+\subsection{NCST : attendus et observés}
+\subsection{Fusion des trois approches}
+
+\section{Résultats sur le corpus pl
+
+
+-----------------------------------------------------------------
+
+
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+% =====================================================================
+% Chapitre : Ma proposition (version mise à jour : NCST normalisé,
+% appariement naïf ordonné et interface Streamlit)
+% ---------------------------------------------------------------------
+% Packages requis dans le préambule du rapport :
+%   \usepackage[T1]{fontenc}
+%   \usepackage[utf8]{inputenc}
+%   \usepackage[french]{babel}
+%   \usepackage{amsmath,amssymb}
+%   \usepackage{booktabs,tabularx,array}
+%   \usepackage{xcolor}
+%   \usepackage{listings}
+%   \usepackage{tikz}
+%   \usetikzlibrary{positioning,arrows.meta,fit,calc,shapes.misc,backgrounds,babel}
+%   (la bibliothèque TikZ « babel » est indispensable avec babel français)
+% =====================================================================
+
+% ---------- Couleurs et styles communs ----------
+\definecolor{eiiacol}{RGB}{230,120,20}
+\definecolor{tsedcol}{RGB}{30,90,180}
+\definecolor{ncstcol}{RGB}{30,140,70}
+\definecolor{uicol}{RGB}{120,60,160}
+\definecolor{graycol}{RGB}{110,110,110}
+
+\tikzset{
+  box/.style={draw, rounded corners=2pt, align=center, font=\small,
+    minimum height=0.8cm, inner sep=4pt, fill=white},
+  frame/.style={draw, rounded corners=4pt, inner sep=8pt, thick},
+  flow/.style={-{Stealth[length=2.2mm]}, thick},
+  nnode/.style={draw=ncstcol, fill=ncstcol!10, rounded corners=1.5pt,
+    font=\ttfamily\scriptsize, inner sep=2.5pt, minimum height=0.42cm,
+    anchor=west},
+  nlink/.style={draw=ncstcol!70!black, thin},
+  elab/.style={font=\ttfamily\tiny, text=graycol, fill=white, inner sep=0.8pt},
+  lvl/.style={font=\ttfamily\scriptsize, anchor=west},
+}
+
+\lstdefinestyle{pyncst}{
+  language=Python, basicstyle=\ttfamily\small, keywordstyle=\color{tsedcol}\bfseries,
+  commentstyle=\color{graycol}, frame=single, rulecolor=\color{ncstcol},
+  framesep=4pt, xleftmargin=6pt, xrightmargin=6pt, showstringspaces=false,
+  columns=fullflexible, keepspaces=true, backgroundcolor=\color{ncstcol!4}
+}
+
+\chapter{Ma proposition}
+
+Ce chapitre présente le pipeline multi-niveaux développé pour évaluer la
+substituabilité algorithmique entre des exercices de programmation. L'objectif
+n'est pas de réduire la similarité à une seule propriété du code, mais de
+comparer les corrections selon trois niveaux d'abstraction complémentaires : la
+structure globale, la topologie syntaxique détaillée et l'organisation
+structurelle abstraite du programme. Une interface Streamlit complète le
+pipeline : elle permet de lancer les comparaisons, de consulter les trois
+scores et d'inspecter les arbres produits à chaque étape.
+
+% =====================================================================
+\section{Architecture globale du pipeline}
+% =====================================================================
+
+Pour chaque paire de programmes $(A,B)$, le pipeline construit plusieurs
+représentations du code et calcule trois mesures distinctes :
+\begin{enumerate}
+  \item l'\textbf{EIIA}, qui compare des profils quantitatifs globaux extraits
+        de l'AST normalisé ;
+  \item le \textbf{TSED}, distance d'édition calculée sur des AST normalisés
+        afin d'évaluer finement la topologie syntaxique ;
+  \item le \textbf{NCST}, qui compare, par un appariement ordonné, les nœuds
+        abstraits d'un arbre structurel normalisé.
+\end{enumerate}
+
+Ces trois mesures sont calculées séparément pour chaque paire. Le pipeline
+produit donc trois scores indépendants, chacun décrivant une dimension
+particulière de la ressemblance entre les programmes. Cette organisation
+multi-vues permet notamment de repérer les cas où deux corrections ont une
+complexité globale proche, mais des organisations structurelles différentes.
+Elle est cohérente avec les travaux qui distinguent la similarité de contenu,
+de structure et de finalité pédagogique~\cite{TODO_ref1,TODO_ref2}.
+
+La chaîne de traitement est résumée par la figure~\ref{fig:architecture}. Le
+code source est d'abord analysé par Tree-sitter, qui produit un arbre
+syntaxique concret (CST). Cet arbre alimente deux branches : la première le
+convertit en AST simplifié puis le normalise, ce qui sert de base commune à
+l'EIIA et au TSED ; la seconde construit directement le NCST brut à partir du
+CST, le normalise puis apparie les nœuds abstraits. Les trois scores sont
+exportés dans des colonnes séparées. L'interface Streamlit peut ensuite
+calculer, à titre facultatif, un score pondéré dont les poids sont choisis par
+l'utilisateur.
+
+\begin{figure}[htbp]
+\centering
+\shorthandoff{:;!?}%
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.55cm and 0.7cm]
+  % Tronc commun
+  \node[box] (src) {Code source\\Python};
+  \node[box, right=of src] (ts) {Analyse\\Tree-sitter};
+  \node[box, right=of ts] (cst) {Arbre syntaxique\\concret (CST)};
+  \draw[flow] (src) -- (ts);
+  \draw[flow] (ts) -- (cst);
+  \node[frame, draw=graycol, fit=(src)(ts)(cst),
+        label={[font=\small\bfseries, text=graycol]above left:Tronc commun}] (trunk) {};
+
+  % Branche AST
+  \node[box, below=1.4cm of ts, xshift=-1.6cm] (conv) {Conversion\\CST $\rightarrow$ AST};
+  \node[box, below=of conv] (astn) {Normalisation\\de l'AST};
+  \node[box, below=of astn] (astnorm) {AST normalisé};
+  \node[box, draw=eiiacol, below left=0.7cm and -0.6cm of astnorm] (eiia)
+      {Profil structurel\\+ distance euclidienne};
+  \node[box, draw=tsedcol, below right=0.7cm and -0.6cm of astnorm] (tsed)
+      {Fonction principale\\+ distance d'édition};
+  \draw[flow] (conv) -- (astn);
+  \draw[flow] (astn) -- (astnorm);
+  \draw[flow, eiiacol] (astnorm) -- (eiia);
+  \draw[flow, tsedcol] (astnorm) -- (tsed);
+  \node[font=\bfseries, text=eiiacol, below=0.35cm of eiia] (seiia) {$S_{\mathrm{EIIA}}$};
+  \node[font=\bfseries, text=tsedcol, below=0.35cm of tsed] (stsed) {$S_{\mathrm{TSED}}$};
+  \draw[flow, eiiacol] (eiia) -- (seiia);
+  \draw[flow, tsedcol] (tsed) -- (stsed);
+  \node[frame, draw=tsedcol!70, fit=(conv)(astn)(astnorm)(eiia)(tsed)(seiia)(stsed),
+        label={[font=\small\bfseries, text=tsedcol]above left:Branche AST (EIIA et TSED)}] (bast) {};
+
+  % Branche NCST
+  \node[box, draw=ncstcol, right=4.6cm of conv] (ncb) {Construction\\du NCST brut};
+  \node[box, draw=ncstcol, below=of ncb] (ncn) {Normalisation\\structurelle};
+  \node[box, draw=ncstcol, below=of ncn] (ncl) {Parcours en profondeur\\liste (kind, level)};
+  \node[box, draw=ncstcol, below=0.7cm of ncl] (ncm) {Appariement\\naïf ordonné};
+  \node[font=\bfseries, text=ncstcol, below=0.35cm of ncm] (sncst) {$S_{\mathrm{NCST}}$};
+  \draw[flow, ncstcol] (ncb) -- (ncn);
+  \draw[flow, ncstcol] (ncn) -- (ncl);
+  \draw[flow, ncstcol] (ncl) -- (ncm);
+  \draw[flow, ncstcol] (ncm) -- (sncst);
+  \node[frame, draw=ncstcol!70, fit=(ncb)(ncn)(ncl)(ncm)(sncst),
+        label={[font=\small\bfseries, text=ncstcol]above right:Branche NCST}] (bncst) {};
+
+  \draw[flow] (cst.south) -- ++(0,-0.5) -| (conv.north);
+  \draw[flow] (cst.south) -- ++(0,-0.5) -| (ncb.north);
+
+  % Export et interface
+  \node[box, below=1.0cm of stsed, xshift=1.8cm, text width=8.6cm] (csv)
+     {\textbf{Export CSV} : \texttt{source\_a, source\_b, tsed\_similarity,}\\
+      \texttt{eiia\_similarity, ncst\_similarity, error}\\
+      {\footnotesize trois colonnes indépendantes}};
+  \draw[flow, eiiacol] (seiia.south) |- (csv.west);
+  \draw[flow, tsedcol] (stsed.south) -- (stsed.south |- csv.north);
+  \draw[flow, ncstcol] (sncst.south) |- (csv.east);
+
+  \node[box, draw=uicol, below=0.6cm of csv, text width=8.6cm] (ui)
+     {\textbf{Interface Streamlit} : tableau des scores, score pondéré facultatif\\
+      {\footnotesize (poids choisis par l'utilisateur), artefacts CST, AST, NCST}};
+  \draw[flow, uicol] (csv) -- (ui);
+\end{tikzpicture}%
+}
+\caption{Architecture globale du pipeline d'évaluation de la similarité
+multi-niveaux. L'EIIA et le TSED partagent l'AST normalisé ; le NCST est
+construit directement à partir du CST. L'interface Streamlit exploite le CSV
+produit par le pipeline.}
+\label{fig:architecture}
+\end{figure}
+
+Le tableau~\ref{tab:synthese} résume ce que chaque approche conserve, ignore
+et mesure.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{2.6cm}XXX}
+\toprule
+ & \textcolor{eiiacol}{EIIA} & \textcolor{tsedcol}{TSED} & \textcolor{ncstcol}{NCST} \\
+\midrule
+Représentation & AST normalisé, résumé en vecteur & AST normalisé complet &
+  NCST normalisé, linéarisé en liste $(\mathit{kind},\mathit{level})$ \\
+Information conservée & Effectifs de nœuds et profondeur &
+  Labels AST, opérateurs, ordre et hiérarchie &
+  Catégories structurelles, niveau d'imbrication, ordre du parcours \\
+Information ignorée & Position et agencement des nœuds &
+  Noms et valeurs concrètes &
+  Noms, valeurs, expressions, opérateurs, paramètres, noms de fonctions \\
+Calcul & Distance euclidienne normalisée &
+  Distance d'édition de Zhang-Shasha &
+  Appariement naïf ordonné, indice de Sørensen-Dice \\
+Question posée & Les programmes ont-ils une taille et une complexité
+  comparables ? & Les arbres sont-ils proches nœud à nœud ? &
+  Les programmes partagent-ils les mêmes catégories abstraites aux mêmes
+  niveaux, dans le même ordre ? \\
+\bottomrule
+\end{tabularx}
+\caption{Synthèse des trois niveaux de représentation du pipeline.}
+\label{tab:synthese}
+\end{table}
+
+% =====================================================================
+\section{Évaluation de l'information indépendante de l'arbre (EIIA)}
+% =====================================================================
+
+L'EIIA fournit une mesure macroscopique de la proximité entre deux programmes.
+Elle repose sur un profil structurel extrait en parcourant l'ensemble des
+nœuds de l'AST normalisé. Pour un programme $A$, le profil est représenté par
+le vecteur à neuf composantes :
+\begin{equation}
+V_A = (n_{nodes}, n_{operators}, n_{operands}, n_{assignments},
+       n_{selections}, n_{iterations}, d_{max}, n_{calls}, n_{returns}).
+\end{equation}
+
+Le tableau~\ref{tab:eiia} précise les types de nœuds comptés pour chaque
+composante.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Composante} & \textbf{Signification} & \textbf{Nœuds comptés} \\
+\midrule
+\texttt{n\_nodes} & taille de l'arbre & tous les nœuds \\
+\texttt{n\_operators} & opérateurs & \texttt{BINARY\_OP, COMPARE, BOOLEAN\_OP, UNARY\_OP} \\
+\texttt{n\_operands} & opérandes & \texttt{IDENTIFIER, NUMBER, STRING, BOOLEAN, NULL} \\
+\texttt{n\_assignments} & affectations & \texttt{ASSIGN, AUG\_ASSIGN} \\
+\texttt{n\_selections} & sélections & \texttt{IF, ELIF, ELSE, TERNARY} \\
+\texttt{n\_iterations} & répétitions & \texttt{FOR, WHILE} \\
+\texttt{d\_max} & profondeur maximale & --- \\
+\texttt{n\_calls} & appels de fonction & \texttt{CALL} \\
+\texttt{n\_returns} & retours & \texttt{RETURN} \\
+\bottomrule
+\end{tabular}
+\caption{Composantes du profil structurel utilisé par l'EIIA.}
+\label{tab:eiia}
+\end{table}
+
+La distance euclidienne entre les profils de deux programmes est définie par :
+\begin{equation}
+d(V_A,V_B) = \lVert V_A - V_B \rVert_2 .
+\end{equation}
+Cette distance est normalisée par la norme maximale des deux profils :
+\begin{equation}
+d_{norm}(A,B) = \frac{d(V_A,V_B)}{\max\left(\lVert V_A\rVert_2,
+\lVert V_B\rVert_2, \varepsilon\right)}, \qquad \varepsilon = 10^{-12}.
+\end{equation}
+Le score EIIA est alors obtenu par :
+\begin{equation}
+S_{\mathrm{EIIA}}(A,B) = \max\left(0,\, 1 - d_{norm}(A,B)\right).
+\end{equation}
+
+La figure~\ref{fig:eiia} illustre cette chaîne de calcul. Aucune pondération
+n'est appliquée aux composantes : chaque métrique contribue de manière
+identique à la distance.
+
+\begin{figure}[htbp]
+\centering
+\shorthandoff{:;!?}%
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.5cm and 0.6cm]
+  \node[box] (a) {AST normalisé\\de $A$};
+  \node[box, below=0.6cm of a] (b) {AST normalisé\\de $B$};
+  \node[box, draw=eiiacol, right=1.7cm of a] (va) {$V_A \in \mathbb{N}^9$};
+  \node[box, draw=eiiacol, right=1.7cm of b] (vb) {$V_B \in \mathbb{N}^9$};
+  \draw[flow] (a) -- node[above, font=\scriptsize]{comptage} (va);
+  \draw[flow] (b) -- node[above, font=\scriptsize]{comptage} (vb);
+  \node[frame, draw=eiiacol!70, fit=(a)(b)(va)(vb),
+        label={[font=\small\bfseries, text=eiiacol]above:1. Extraction des profils}] (f1) {};
+
+  \node[box, draw=eiiacol, right=1.6cm of $(va)!0.5!(vb)$] (d) {$d = \lVert V_A - V_B\rVert_2$};
+  \node[box, draw=eiiacol, right=of d] (dn) {$d_{norm} = \dfrac{d}{\max(\lVert V_A\rVert_2,\lVert V_B\rVert_2,\varepsilon)}$};
+  \node[box, draw=eiiacol, fill=eiiacol!10, right=of dn] (s) {$S_{\mathrm{EIIA}} = \max(0, 1 - d_{norm})$};
+  \draw[flow] (va.east) -- (d.west);
+  \draw[flow] (vb.east) -- (d.west);
+  \draw[flow] (d) -- (dn);
+  \draw[flow] (dn) -- (s);
+  \node[font=\scriptsize, text=graycol, below=0.15cm of s] {score borné dans $[0,1]$};
+  \node[frame, draw=eiiacol!70, fit=(d)(dn)(s), inner sep=10pt,
+        label={[font=\small\bfseries, text=eiiacol]above:2. Comparaison non pondérée}] {};
+\end{tikzpicture}%
+}
+\caption{Chaîne de calcul de l'EIIA : extraction de deux profils structurels,
+puis distance euclidienne normalisée.}
+\label{fig:eiia}
+\end{figure}
+
+Cette approche s'inscrit dans la famille des métriques statiques qui décrivent
+la taille et la complexité d'un programme sans nécessiter l'alignement de deux
+arbres ou graphes~\cite{TODO_ref3}. Des travaux consacrés à l'évaluation de la
+difficulté et de l'effort de programmation montrent également que des
+métriques telles que la taille du code et la complexité cyclomatique peuvent
+être corrélées à un indice d'effort interne, l'\emph{Index of Internal Effort}
+(IIE)~\cite{TODO_ref4}. Cette observation soutient l'utilisation de profils
+quantitatifs comme indicateurs de complexité, sans établir pour autant une
+équivalence entre l'EIIA et l'IIE. L'EIIA constitue ainsi un indicateur de la
+proximité globale d'architecture et de complexité, sans prétendre décrire à
+lui seul la stratégie algorithmique détaillée : deux programmes ayant les
+mêmes effectifs de nœuds obtiennent un score maximal même si ces nœuds sont
+agencés différemment.
+
+% =====================================================================
+\section{AST normalisé et distance TSED}
+% =====================================================================
+
+La deuxième approche évalue la structure grammaticale détaillée du code. Le
+code Python est d'abord analysé avec Tree-sitter, puis converti en un AST
+simplifié dont les nœuds portent des types unifiés (\texttt{FUNCTION},
+\texttt{ASSIGN}, \texttt{IF}, \texttt{FOR}, \texttt{BINARY\_OP}, \texttt{CALL},
+\texttt{IDENTIFIER}, etc.). Une phase de normalisation réduit ensuite
+l'influence des choix de style et des détails formels qui ne modifient pas la
+logique de résolution.
+
+\subsection{Normalisation de l'AST}
+
+La normalisation transforme les deux arbres avant le calcul de la distance
+d'édition. Elle comprend les opérations suivantes :
+\begin{itemize}
+  \item l'anonymisation canonique des paramètres, des variables locales et des
+        fonctions du fichier, remplacés dans l'ordre d'apparition par
+        \texttt{PARAM\_1}, \texttt{VAR\_1} et \texttt{FUNC\_1} ;
+  \item l'abstraction des littéraux, qui remplace les valeurs concrètes par les
+        catégories \texttt{NUM}, \texttt{STR}, \texttt{BOOL} et \texttt{NULL} ;
+  \item l'expansion des affectations augmentées, qui réécrit \texttt{a += b}
+        sous la forme canonique \texttt{a = a + b} ;
+  \item l'\emph{inlining} des fonctions auxiliaires simples, limité aux
+        fonctions sûres : un seul \texttt{return} portant une expression
+        unique, sans boucle, condition, appel, exception ni récursion.
+\end{itemize}
+
+Les opérateurs, tels que \texttt{+}, \texttt{\%} ou \texttt{==}, ainsi que les
+structures de contrôle sont conservés, car ils portent une information
+importante sur la stratégie de résolution. Les commentaires sont supprimés dès
+la conversion de l'arbre. La figure~\ref{fig:astnorm} illustre l'effet combiné
+de ces règles sur une instruction.
+
+\begin{figure}[htbp]
+\centering
+\shorthandoff{:;!?}%
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  t/.style={draw, rounded corners=1.5pt, font=\ttfamily\scriptsize, inner sep=3pt},
+  bad/.style={t, draw=red!70!black, fill=red!8},
+  good/.style={t, draw=ncstcol, fill=ncstcol!10},
+  level distance=1.1cm]
+  % Avant
+  \node[font=\bfseries] at (0,1.6) {Avant};
+  \node[font=\ttfamily\small, align=left] at (0,0.8)
+       {\textcolor{red!70!black}{\# cumul}\\total += x * 2};
+  \node[bad] (r1) at (0,-0.4) {AUG\_ASSIGN(+=)}
+    [sibling distance=2.6cm]
+    child {node[bad] {IDENTIFIER(total)}}
+    child {node[t] {BINARY\_OP(*)}
+      [sibling distance=2.0cm]
+      child {node[bad] {IDENTIFIER(x)}}
+      child {node[bad] {NUMBER(2)}}};
+  % Règles
+  \node[box, draw=graycol, font=\scriptsize, align=left] (rules) at (4.6,-1.0)
+    {\textbf{Règles appliquées}\\
+     commentaire supprimé\\
+     \texttt{total} $\rightarrow$ \texttt{VAR\_1}\\
+     \texttt{x} $\rightarrow$ \texttt{VAR\_2}\\
+     \texttt{2} $\rightarrow$ \texttt{NUM}\\
+     \texttt{+=} $\rightarrow$ \texttt{= \dots\ +}\\
+     opérateurs conservés};
+  \draw[flow, graycol] (2.6,-1.0) -- (rules.west);
+  \draw[flow, graycol] (rules.east) -- (6.8,-1.0);
+  % Après
+  \node[font=\bfseries] at (9.6,1.6) {Après};
+  \node[font=\ttfamily\small] at (9.6,0.8) {VAR\_1 = VAR\_1 + VAR\_2 * NUM};
+  \node[good] at (9.6,-0.4) {ASSIGN}
+    [sibling distance=3.0cm]
+    child {node[good] {IDENTIFIER(VAR\_1)}}
+    child {node[t] {BINARY\_OP(+)}
+      [sibling distance=2.6cm]
+      child {node[good] {IDENTIFIER(VAR\_1)}}
+      child {node[t] {BINARY\_OP(*)}
+        [sibling distance=2.3cm]
+        child {node[good] {IDENTIFIER(VAR\_2)}}
+        child {node[good] {NUMBER(NUM)}}}};
+\end{tikzpicture}%
+}
+\caption{Normalisation d'une instruction. Les nœuds en rouge portent des
+détails de surface (noms, valeurs, sucre syntaxique) ; après normalisation, ils
+sont remplacés par des formes canoniques (en vert). Les opérateurs sont
+conservés.}
+\label{fig:astnorm}
+\end{figure}
+
+\subsection{Distance d'édition entre arbres}
+
+La distance TSED correspond à la distance d'édition entre les deux arbres
+normalisés, calculée selon l'algorithme de Zhang et
+Shasha~\cite{TODO_ref5,TODO_ref6}. Chaque nœud est décrit par un label
+associant son type à sa valeur résiduelle, par exemple \texttt{BINARY\_OP(+)}
+ou \texttt{IDENTIFIER(VAR\_1)}. Les coûts d'insertion, de suppression et de
+substitution sont unitaires :
+\begin{equation}
+c_{ins} = c_{del} = 1, \qquad
+c_{sub}(u,v) =
+\begin{cases}
+0 & \text{si } \mathrm{label}(u) = \mathrm{label}(v),\\
+1 & \text{sinon.}
+\end{cases}
+\end{equation}
+
+Si $TED(A,B)$ désigne la distance d'édition et $|A|$ et $|B|$ le nombre de
+nœuds des deux arbres, le score est défini par :
+\begin{equation}
+S_{\mathrm{TSED}}(A,B) = 1 - \frac{TED(A,B)}{\max(|A|,|B|)}.
+\end{equation}
+
+La figure~\ref{fig:tsed} montre un cas minimal : deux fonctions qui ne
+diffèrent que par un opérateur. Une seule substitution suffit à transformer un
+arbre en l'autre.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  t/.style={draw=tsedcol, fill=tsedcol!8, rounded corners=1.5pt,
+            font=\ttfamily\scriptsize, inner sep=3pt},
+  hl/.style={t, draw=red!70!black, fill=red!8, thick},
+  level distance=1.0cm, sibling distance=3.3cm]
+  \node[font=\ttfamily\small] at (0,0.8) {return a + b};
+  \node[t] at (0,0) {RETURN}
+    child {node[hl] (opA) {BINARY\_OP(+)}
+      child {node[t] {IDENTIFIER(PARAM\_1)}}
+      child {node[t] {IDENTIFIER(PARAM\_2)}}};
+  \node[font=\ttfamily\small] at (8.5,0.8) {return a * b};
+  \node[t] at (8.5,0) {RETURN}
+    child {node[hl] (opB) {BINARY\_OP(*)}
+      child {node[t] {IDENTIFIER(PARAM\_1)}}
+      child {node[t] {IDENTIFIER(PARAM\_2)}}};
+  \draw[flow, red!70!black, dashed] (opA) -- node[above, font=\scriptsize]{substitution, coût 1} (opB);
+  \node[draw=tsedcol, rounded corners, fill=tsedcol!5, inner sep=5pt] at (4.25,-3.2)
+     {$TED = 1,\quad |A| = |B| = 4 \quad\Rightarrow\quad S_{\mathrm{TSED}} = 1 - \frac{1}{4} = 0{,}75$};
+\end{tikzpicture}
+\caption{Exemple de calcul TSED sur deux AST normalisés de quatre nœuds.}
+\label{fig:tsed}
+\end{figure}
+
+Dans le cas de programmes modulaires, le système sélectionne la fonction dont
+l'AST contient le plus de nœuds (la première en cas d'égalité) afin de
+comparer en priorité la fonction centrale de la correction.
+
+% =====================================================================
+\section{Arbre structurel normalisé (NCST)}
+% =====================================================================
+
+La troisième approche compare l'organisation structurelle abstraite des
+programmes. Deux AST peuvent être très différents tout en présentant une
+organisation proche lorsqu'ils partagent les mêmes catégories de blocs, aux
+mêmes niveaux d'imbrication et dans le même ordre.
+
+\subsection{Construction et normalisation du NCST}
+
+Le NCST (\emph{Normalized Control Structure Tree}) est d'abord construit sous
+forme brute directement à partir du CST produit par Tree-sitter. Les
+instructions sont regroupées en séquences et chaque construction structurante
+devient un nœud typé, relié à ses blocs par des arêtes étiquetées.
+
+Une normalisation structurelle est ensuite appliquée. Elle supprime toutes les
+informations dépendantes du code source :
+\begin{itemize}
+  \item les noms des variables ;
+  \item les valeurs constantes ;
+  \item les expressions ;
+  \item les opérateurs ;
+  \item les paramètres ;
+  \item les noms exacts des fonctions.
+\end{itemize}
+
+Seules les catégories et les relations structurelles sont conservées
+(tableau~\ref{tab:ncst_vocab}). Contrairement à une simple extraction des
+structures de contrôle, les instructions ordinaires restent présentes sous la
+forme de nœuds anonymes \texttt{STATEMENT} : le NCST normalisé conserve donc
+la présence et la position des instructions, sans leur contenu.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{3.2cm}X}
+\toprule
+Catégories conservées &
+\texttt{PROGRAM}, \texttt{CLASS}, \texttt{FUNCTION}, \texttt{SEQUENCE},
+\texttt{ITERATION}, \texttt{SELECTION}, \texttt{EXCEPTION}, \texttt{HANDLER},
+\texttt{CONTEXT}, \texttt{COMPREHENSION}, \texttt{LAMBDA}, \texttt{TRANSFER},
+\texttt{STATEMENT} \\
+\midrule
+Relations conservées &
+\texttt{BODY}, \texttt{CONTAINS}, \texttt{NEXT}, \texttt{THEN}, \texttt{ELSE},
+\texttt{ELIF}, \texttt{CASE}, \texttt{DEFAULT}, \texttt{TRY}, \texttt{CATCH},
+\texttt{FINALLY} \\
+\midrule
+Informations supprimées &
+noms de variables, constantes, expressions, opérateurs, paramètres, noms
+exacts des fonctions \\
+\bottomrule
+\end{tabularx}
+\caption{Vocabulaire du NCST normalisé.}
+\label{tab:ncst_vocab}
+\end{table}
+
+\subsection{Niveau structurel}
+
+Chaque nœud reçoit un niveau structurel (\emph{level}) qui représente son
+niveau d'imbrication. Les relations qui ouvrent un bloc (\texttt{BODY},
+\texttt{THEN}, \texttt{ELSE}, \texttt{ELIF}, \texttt{CASE}, \texttt{DEFAULT},
+\texttt{TRY}, \texttt{CATCH}, \texttt{FINALLY}) augmentent le niveau ; les
+relations \texttt{CONTAINS} et \texttt{NEXT} conservent le niveau courant
+(figure~\ref{fig:levels}). Le niveau structurel n'est donc pas la profondeur
+de l'arbre : un nœud \texttt{FUNCTION} contenu dans la séquence racine reste
+au même niveau que cette séquence.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+  \node[box, draw=ncstcol] (p) at (0,0) {nœud parent\\niveau $\ell$};
+  \node[box, draw=ncstcol] (c1) at (-4.2,-2.6) {nœud enfant\\niveau $\ell$};
+  \node[box, draw=ncstcol, fill=ncstcol!10] (c2) at (4.2,-2.6) {nœud enfant\\niveau $\ell+1$};
+  \draw[flow, graycol] (p) -- node[above left=2pt, font=\ttfamily\scriptsize, align=center]{CONTAINS\\NEXT} (c1);
+  \draw[flow, ncstcol] (p) -- node[above right=2pt, font=\ttfamily\scriptsize, align=center]
+      {BODY, THEN, ELIF,\\ELSE, CASE, DEFAULT,\\TRY, CATCH, FINALLY} (c2);
+  \node[font=\small\itshape, below=0.2cm of c1] {même niveau};
+  \node[font=\small\itshape, below=0.2cm of c2] {entrée dans un bloc};
+\end{tikzpicture}
+\caption{Calcul du niveau structurel dans le NCST : seules les arêtes qui
+ouvrent un bloc incrémentent le niveau.}
+\label{fig:levels}
+\end{figure}
+
+La normalisation conserve les imbrications. Une sélection placée dans une
+itération et une itération placée dans une sélection produisent deux arbres
+distincts (figure~\ref{fig:imbrication}) : la normalisation ne confond pas ces
+deux situations.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[x=0.5cm, y=-0.58cm]
+  % Cas 1 : sélection dans une itération
+  \node[font=\small\bfseries] at (3.5,-1.4) {Sélection dans une itération};
+  \node[nnode] (a1) at (0,0) {ITERATION};
+  \node[nnode] (a2) at (1,1) {SEQUENCE};
+  \node[nnode] (a3) at (2,2) {SELECTION};
+  \node[nnode] (a4) at (3,3) {SEQUENCE};
+  \node[nnode] (a5) at (4,4) {STATEMENT};
+  \foreach \pp/\cc in {a1/a2,a2/a3,a3/a4,a4/a5}
+     \draw[nlink] ($(\pp.south west)+(0.25,0)$) |- (\cc.west);
+  \node[font=\ttfamily\scriptsize, align=left, anchor=north west] at (0,5.2)
+    {[(ITERATION,0), (SEQUENCE,1),\\ \ (SELECTION,1), (SEQUENCE,2),\\ \ (STATEMENT,2)]};
+
+  % Cas 2 : itération dans une sélection
+  \begin{scope}[xshift=7.2cm]
+  \node[font=\small\bfseries] at (3.5,-1.4) {Itération dans une sélection};
+  \node[nnode] (b1) at (0,0) {SELECTION};
+  \node[nnode] (b2) at (1,1) {SEQUENCE};
+  \node[nnode] (b3) at (2,2) {ITERATION};
+  \node[nnode] (b4) at (3,3) {SEQUENCE};
+  \node[nnode] (b5) at (4,4) {STATEMENT};
+  \foreach \pp/\cc in {b1/b2,b2/b3,b3/b4,b4/b5}
+     \draw[nlink] ($(\pp.south west)+(0.25,0)$) |- (\cc.west);
+  \node[font=\ttfamily\scriptsize, align=left, anchor=north west] at (0,5.2)
+    {[(SELECTION,0), (SEQUENCE,1),\\ \ (ITERATION,1), (SEQUENCE,2),\\ \ (STATEMENT,2)]};
+  \end{scope}
+\end{tikzpicture}
+\caption{Deux imbrications inverses conduisent à deux NCST normalisés
+différents (niveaux relatifs, la racine du fragment étant au niveau 0).
+L'appariement de la section~\ref{sec:matching} n'associe que
+\texttt{SEQUENCE}, \texttt{SEQUENCE} et \texttt{STATEMENT} : $M = 3$ et
+$S_{\mathrm{NCST}} = 6/10 = 0{,}6$.}
+\label{fig:imbrication}
+\end{figure}
+
+\subsection{Exemple de NCST normalisé et linéarisation}
+
+Pour comparer deux NCST, chaque arbre est parcouru en profondeur depuis sa
+racine. Les nœuds sont placés dans une liste qui conserve l'ordre du parcours,
+chaque élément étant le couple $(\mathit{kind}, \mathit{level})$.
+
+La figure~\ref{fig:ncst_example} présente le NCST normalisé d'une fonction
+contenant deux instructions, une boucle, une sélection dans cette boucle et
+une instruction \texttt{return}. Les noms de variables, les valeurs et les
+opérateurs ont disparu : il ne reste que la structure abstraite du programme.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[x=0.55cm, y=-0.56cm]
+  \node[font=\small\bfseries, anchor=west] at (0,-1.3) {NCST normalisé};
+  \node[font=\small\bfseries, anchor=west] at (15.2,-1.3) {Liste issue du parcours};
+  \node[nnode] (n0)  at (0,0)   {PROGRAM};
+  \node[nnode] (n1)  at (1,1)   {SEQUENCE};
+  \node[nnode] (n2)  at (2,2)   {FUNCTION};
+  \node[nnode] (n3)  at (3,3)   {SEQUENCE};
+  \node[nnode] (n4)  at (4,4)   {STATEMENT};
+  \node[nnode] (n5)  at (4,5)   {STATEMENT};
+  \node[nnode] (n6)  at (4,6)   {ITERATION};
+  \node[nnode] (n7)  at (5,7)   {SEQUENCE};
+  \node[nnode] (n8)  at (6,8)   {SELECTION};
+  \node[nnode] (n9)  at (7,9)   {SEQUENCE};
+  \node[nnode] (n10) at (8,10)  {STATEMENT};
+  \node[nnode] (n11) at (8,11)  {STATEMENT};
+  \node[nnode] (n12) at (4,12)  {TRANSFER};
+  % arêtes avec étiquettes
+  \foreach \pp/\cc/\ee in {n0/n1/BODY, n1/n2/CONTAINS, n2/n3/BODY, n3/n4/CONTAINS,
+       n3/n5/CONTAINS, n3/n6/CONTAINS, n6/n7/BODY, n7/n8/CONTAINS, n8/n9/THEN,
+       n9/n10/CONTAINS, n9/n11/CONTAINS, n3/n12/CONTAINS}
+     \draw[nlink] ($(\pp.south west)+(0.25,0)$) |- (\cc.west);
+  \foreach \cc/\ee in {n1/BODY, n2/CONTAINS, n3/BODY, n4/CONTAINS, n5/CONTAINS,
+       n6/CONTAINS, n7/BODY, n8/CONTAINS, n9/THEN, n10/CONTAINS, n11/CONTAINS,
+       n12/CONTAINS}
+     \node[elab, anchor=west, text=ncstcol!60!black] at ($(\cc.east)+(0.1,0)$) {[\ee]};
+  % liste
+  \foreach \ii/\kk/\lv in {0/PROGRAM/0, 1/SEQUENCE/1, 2/FUNCTION/1, 3/SEQUENCE/2,
+       4/STATEMENT/2, 5/STATEMENT/2, 6/ITERATION/2, 7/SEQUENCE/3, 8/SELECTION/3,
+       9/SEQUENCE/4, 10/STATEMENT/4, 11/STATEMENT/4, 12/TRANSFER/2}{
+     \node[lvl] (l\ii) at (15.2,\ii) {(\kk,};
+     \node[lvl] at (20.4,\ii) {niveau=\lv)};
+     \draw[densely dotted, graycol] (n\ii.east) -- (l\ii.west);
+  }
+\end{tikzpicture}
+\caption{NCST normalisé d'une fonction (gauche), avec entre crochets la relation qui relie chaque nœud à son parent, et liste $(\mathit{kind},
+\mathit{level})$ obtenue par parcours en profondeur (droite). Le retrait
+traduit la profondeur dans l'arbre, tandis que le niveau n'augmente que sur
+les arêtes \texttt{BODY} et \texttt{THEN}.}
+\label{fig:ncst_example}
+\end{figure}
+
+\subsection{Invariance du squelette structurel}
+
+La figure~\ref{fig:ncst_equivalence} reprend deux fonctions dont les
+expressions et les valeurs manipulées sont différentes. Le premier programme
+recherche un nombre pair, tandis que le second recherche une valeur cible.
+Malgré cette différence de domaine, les deux solutions parcourent une
+collection, testent une condition puis retournent immédiatement un résultat
+en cas de succès, avant d'effectuer un retour par défaut. Après
+normalisation, les deux NCST produisent la même liste.
+
+\begin{figure}[htbp]
+\centering
+\shorthandoff{:;!?}%
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[x=0.55cm, y=-0.56cm]
+  \node[draw, rounded corners, font=\ttfamily\scriptsize, align=left, anchor=north west,
+        inner sep=5pt] (ca) at (-15,-0.6)
+    {\textbf{Code A}\\[2pt]
+     def find\_even(numbers):\\
+     \ \ for n in numbers:\\
+     \ \ \ \ if n \% 2 == 0:\\
+     \ \ \ \ \ \ return n\\
+     \ \ return -1};
+  \node[draw, rounded corners, font=\ttfamily\scriptsize, align=left, anchor=north west,
+        inner sep=5pt] (cb) at (-15,5.4)
+    {\textbf{Code B}\\[2pt]
+     def search\_target(array, target):\\
+     \ \ for element in array:\\
+     \ \ \ \ if element == target:\\
+     \ \ \ \ \ \ return True\\
+     \ \ return False};
+  \coordinate (jn) at (-5.2,4.5);
+  \draw[thick, ncstcol] (ca.east) -- (jn);
+  \draw[thick, ncstcol] (cb.east) -- (jn);
+  \draw[flow, ncstcol] (jn) -- (-0.7,4.5);
+  \node[font=\scriptsize\itshape, align=center, above] at (-2.95,4.5) {construction\\+ normalisation};
+
+  \node[nnode] (n0) at (0,0) {PROGRAM};
+  \node[nnode] (n1) at (1,1) {SEQUENCE};
+  \node[nnode] (n2) at (2,2) {FUNCTION};
+  \node[nnode] (n3) at (3,3) {SEQUENCE};
+  \node[nnode] (n4) at (4,4) {ITERATION};
+  \node[nnode] (n5) at (5,5) {SEQUENCE};
+  \node[nnode] (n6) at (6,6) {SELECTION};
+  \node[nnode] (n7) at (7,7) {SEQUENCE};
+  \node[nnode] (n8) at (8,8) {TRANSFER};
+  \node[nnode] (n9) at (4,9) {TRANSFER};
+  \foreach \pp/\cc in {n0/n1,n1/n2,n2/n3,n3/n4,n4/n5,n5/n6,n6/n7,n7/n8,n3/n9}
+     \draw[nlink] ($(\pp.south west)+(0.25,0)$) |- (\cc.west);
+  \foreach \ii/\lv in {0/0,1/1,2/1,3/2,4/2,5/3,6/3,7/4,8/4,9/2}
+     \node[lvl, text=ncstcol!70!black] at (14,\ii) {niveau \lv};
+  \node[draw, dotted, thick, fit=(n0)(n9)(n8), inner sep=0.3cm,
+        label={[font=\small\bfseries]above:NCST normalisé commun}] (box) {};
+  \node[font=\small\bfseries] at (7,11.2) {$S_{\mathrm{NCST}}(A,B) = \frac{2\times 10}{10+10} = 1$};
+\end{tikzpicture}%
+}
+\caption{Invariance du NCST normalisé sur deux programmes différents. Les
+codes A et B utilisent des variables, des opérateurs et des valeurs de retour
+distincts, mais leur normalisation produit la même liste de nœuds abstraits.}
+\label{fig:ncst_equivalence}
+\end{figure}
+
+Dans cet exemple, le score $S_{\mathrm{NCST}} = 1$ exprime une correspondance
+parfaite de la structure conservée par la représentation. Il ne signifie pas
+que les deux fonctions sont équivalentes du point de vue de leur résultat,
+mais qu'elles partagent une même organisation : itération, test, retour
+anticipé et retour par défaut.
+
+\subsection{Algorithme d'appariement naïf ordonné}
+\label{sec:matching}
+
+\paragraph{Choix du petit et du grand arbre.}
+Le nombre de nœuds de chaque NCST normalisé est compté. Le NCST qui contient le
+moins de nœuds devient le \emph{petit arbre} $A$, celui qui en contient le plus
+devient le \emph{grand arbre} $B$. Le matching est effectué du petit arbre vers
+le grand arbre, ce qui évite de considérer chaque nœud du grand arbre comme
+point de départ possible.
+
+\paragraph{Principe.}
+L'algorithme est volontairement naïf : il ne s'agit pas d'un calcul de
+distance d'édition d'arbres. Pour chaque nœud du petit arbre :
+\begin{enumerate}
+  \item le grand arbre est parcouru à partir de la position qui suit le
+        dernier nœud apparié ;
+  \item le premier nœud compatible est recherché ;
+  \item deux nœuds sont compatibles s'ils possèdent le même type abstrait
+        (\emph{kind}) et le même niveau structurel (\emph{level}) ;
+  \item lorsqu'un appariement est trouvé, sa position dans le grand arbre est
+        mémorisée ;
+  \item le nœud suivant du petit arbre ne peut être recherché qu'après cette
+        position.
+\end{enumerate}
+
+La condition de compatibilité s'écrit :
+\begin{equation}
+\mathrm{compatible}(a,b) \iff a.\mathit{kind} = b.\mathit{kind}
+\;\wedge\; a.\mathit{level} = b.\mathit{level}.
+\end{equation}
+
+La contrainte d'ordre est assurée par l'indice de reprise
+$\mathit{last\_match\_index\_b} + 1$ : un nœud du grand arbre ne peut pas être
+utilisé deux fois et les appariements restent dans l'ordre du parcours. Un
+nœud du petit arbre sans correspondant ne fait pas avancer cet indice. La
+méthode principale est la suivante :
+
+\begin{lstlisting}[style=pyncst]
+matches = []
+last_match_index_b = -1
+
+for node_a in nodes_a:                       # petit arbre
+    for i in range(last_match_index_b + 1, len(nodes_b)):
+        node_b = nodes_b[i]                  # grand arbre
+        if node_a.kind == node_b.kind and node_a.level == node_b.level:
+            matches.append((node_a, node_b))
+            last_match_index_b = i
+            break
+\end{lstlisting}
+
+\paragraph{Exemple d'appariement.}
+La figure~\ref{fig:matching} applique cet algorithme à un petit arbre de cinq
+nœuds et à un grand arbre de six nœuds. Lors de la recherche de
+\texttt{ITERATION} (niveau 2), le parcours du grand arbre commence à
+l'indice~2 : le \texttt{STATEMENT} de niveau 2 n'est pas compatible et il est
+dépassé. Ce nœud supplémentaire reste non apparié.
+
+\begin{figure}[htbp]
+\centering
+\shorthandoff{:;!?}%
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  m/.style={draw=ncstcol, fill=ncstcol!10, rounded corners=1.5pt, align=center,
+            font=\ttfamily\scriptsize, minimum width=2.1cm, minimum height=0.85cm},
+  u/.style={m, draw=red!70!black, fill=red!8, dashed}]
+  \node[font=\small\bfseries, anchor=east] at (-1.4,0) {Petit arbre $A$};
+  \node[font=\small\bfseries, anchor=east] at (-1.4,-2.6) {Grand arbre $B$};
+  % petit arbre : positions alignées sur leurs correspondants
+  \foreach \ii/\kk/\lv/\xx in {0/PROGRAM/0/0, 1/SEQUENCE/1/1, 2/ITERATION/2/3, 3/SELECTION/3/4, 4/STATEMENT/4/5}
+     \node[m] (a\ii) at (\xx*2.5,0) {\kk\\niveau \lv};
+  % grand arbre
+  \foreach \ii/\kk/\lv in {0/PROGRAM/0, 1/SEQUENCE/1, 3/ITERATION/2, 4/SELECTION/3, 5/STATEMENT/4}
+     \node[m] (b\ii) at (\ii*2.5,-2.6) {\kk\\niveau \lv};
+  \node[u] (b2) at (2*2.5,-2.6) {STATEMENT\\niveau 2};
+  \foreach \i in {0,...,5}
+     \node[font=\scriptsize, text=graycol] at (\i*2.5,-3.4) {indice \i};
+  \foreach \aa/\bb in {0/0,1/1,2/3,3/4,4/5}
+     \draw[densely dashed, thick, ncstcol!80!black] (a\aa.south) -- (b\bb.north);
+  \node[font=\scriptsize, text=red!70!black] at (2*2.5,-1.3) {non apparié};
+  \node[draw=ncstcol, rounded corners, fill=ncstcol!5, inner sep=5pt] at (6.25,-4.5)
+    {$M = 5,\quad N_s = 5,\quad N_g = 6 \quad\Rightarrow\quad
+      S_{\mathrm{NCST}} = \dfrac{2\times 5}{5+6} = \dfrac{10}{11} \approx 0{,}909$};
+\end{tikzpicture}%
+}
+\caption{Appariement ordonné du petit arbre vers le grand arbre. Les
+pointillés relient des nœuds de même \emph{kind} et de même \emph{level},
+dans un ordre croissant d'indices.}
+\label{fig:matching}
+\end{figure}
+
+\subsection{Calcul de la similarité NCST}
+
+Soit $M$ le nombre de nœuds appariés, $N_s$ le nombre de nœuds du petit arbre
+et $N_g$ le nombre de nœuds du grand arbre. La similarité NCST utilise
+l'indice de Sørensen-Dice :
+\begin{equation}
+S_{\mathrm{NCST}}(A,B) = \frac{2M}{N_s + N_g}.
+\end{equation}
+
+Comme $M \leq N_s \leq N_g$, le score est compris entre $0$ et $1$ : il vaut
+$0$ lorsqu'aucun nœud n'est apparié et $1$ lorsque tous les nœuds des deux
+arbres sont appariés, ce qui impose $N_s = N_g = M$. Une valeur intermédiaire
+indique que certains nœuds sont communs, mais que l'un des arbres contient des
+nœuds supplémentaires ou différents. Par exemple, avec $N_s = 2$, $N_g = 4$ et
+$M = 2$ :
+\begin{equation}
+S_{\mathrm{NCST}} = \frac{2\times 2}{2+4} = \frac{4}{6} \approx 0{,}6667.
+\end{equation}
+Même lorsque tous les nœuds du petit arbre trouvent un correspondant, la
+différence de taille entre les deux arbres limite donc le score.
+
+\subsection{Positionnement par rapport au TSED et à l'EIIA}
+
+Les trois mesures ont des rôles différents. Le TSED compare finement les AST au
+moyen d'une distance d'édition d'arbres et tient compte des labels et de leur
+structure détaillée. L'EIIA compare un vecteur de métriques structurelles
+(nombre de nœuds, d'opérateurs, d'affectations, de sélections, d'itérations,
+d'appels et de retours). Le NCST, enfin, compare uniquement des nœuds abstraits
+normalisés à travers leur \emph{kind} et leur \emph{level}, en ignorant les
+noms, les valeurs et les expressions, mais en conservant l'ordre général du
+parcours. Le NCST n'est donc pas un \emph{Tree Edit Distance} : il s'agit d'un
+appariement ordonné et naïf de nœuds abstraits.
+
+\subsection{Limites de l'approche}
+
+Cette première version est volontairement simple. Elle ne vérifie pas
+directement :
+\begin{itemize}
+  \item le parent exact du nœud ;
+  \item la relation d'arête (\texttt{BODY}, \texttt{THEN}, \texttt{NEXT}, etc.) ;
+  \item l'égalité complète des sous-arbres ;
+  \item la signification des instructions \texttt{STATEMENT} ;
+  \item les labels ou les expressions supprimés pendant la normalisation.
+\end{itemize}
+
+Par ailleurs, l'appariement est glouton : chaque nœud du petit arbre est
+associé au premier nœud compatible rencontré, sans retour en arrière. Ce choix
+garantit un calcul simple, dont le coût reste au pire de l'ordre de
+$N_s \times N_g$ comparaisons, mais il ne cherche pas l'appariement maximal
+possible. Deux
+arbres peuvent ainsi obtenir un score NCST élevé lorsqu'ils contiennent les
+mêmes catégories abstraites aux mêmes niveaux, même si leurs parents ou leurs
+relations exactes diffèrent. Cette mesure doit donc être interprétée comme un
+indicateur de proximité structurelle abstraite, et non comme une preuve
+d'équivalence sémantique ou de plagiat.
+
+% =====================================================================
+\section{Exécution et synthèse des mesures}
+% =====================================================================
+
+Le pipeline ne fusionne pas les trois mesures. Elles décrivent des dimensions
+distinctes de la similarité logicielle, et leur combinaison prématurée
+masquerait la contribution de chaque représentation. Pour chaque paire de
+programmes, le système exporte donc séparément les trois scores
+$S_{\mathrm{EIIA}}$, $S_{\mathrm{TSED}}$ et $S_{\mathrm{NCST}}$, selon le
+format présenté dans le tableau~\ref{tab:csv}.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{llcccc}
+\toprule
+\texttt{source\_a} & \texttt{source\_b} & \texttt{tsed\_similarity} &
+\texttt{eiia\_similarity} & \texttt{ncst\_similarity} & \texttt{error} \\
+\midrule
+\texttt{ex\_A.py} & \texttt{ex\_B.py} & $S_{\mathrm{TSED}}$ & $S_{\mathrm{EIIA}}$ & $S_{\mathrm{NCST}}$ & --- \\
+\texttt{ex\_A.py} & \texttt{ex\_C.py} & $S_{\mathrm{TSED}}$ & $S_{\mathrm{EIIA}}$ & $S_{\mathrm{NCST}}$ & --- \\
+\multicolumn{6}{c}{\dots} \\
+\bottomrule
+\end{tabular}
+\caption{Structure du fichier CSV exporté par le pipeline : une ligne par
+paire, une colonne par mesure, et une colonne d'erreur en cas d'échec de
+l'analyse.}
+\label{tab:csv}
+\end{table}
+
+Cette sortie conserve une information interprétable sur la nature de la
+proximité. Le tableau~\ref{tab:profils} donne quelques profils de lecture
+typiques : par exemple, deux exercices peuvent obtenir un score EIIA élevé,
+signe d'une architecture globale comparable, tout en présentant un score NCST
+faible, indiquant une organisation structurelle différente.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{cccX}
+\toprule
+\textcolor{eiiacol}{\textbf{EIIA}} & \textcolor{tsedcol}{\textbf{TSED}} &
+\textcolor{ncstcol}{\textbf{NCST}} & \textbf{Lecture possible} \\
+\midrule
+élevé & élevé & élevé & Corrections très proches, à la fois en taille, en syntaxe et en structure. \\
+élevé & faible & élevé & Même organisation structurelle et même complexité, mais écritures détaillées différentes. \\
+faible & faible & élevé & Même organisation appliquée à des expressions de tailles différentes. \\
+élevé & --- & faible & Complexité comparable mais organisations structurelles distinctes. \\
+\bottomrule
+\end{tabularx}
+\caption{Exemples de profils de scores et de leur interprétation.}
+\label{tab:profils}
+\end{table}
+
+Les trois colonnes permettent ainsi d'analyser séparément les dimensions de la
+substituabilité algorithmique avant toute interprétation pédagogique.
+
+% =====================================================================
+\section{Interface de comparaison Streamlit}
+% =====================================================================
+
+Une interface web développée avec Streamlit rend le pipeline utilisable sans
+passer par la ligne de commande. Elle ne réimplémente pas les mesures : elle
+prépare un jeu de fichiers, appelle la fonction \texttt{run\_pipeline} du
+module \texttt{run\_poc}, lit le CSV produit, puis affiche les scores et les
+arbres intermédiaires. La figure~\ref{fig:streamlit} résume son
+fonctionnement.
+
+\begin{figure}[htbp]
+\centering
+\shorthandoff{:;!?}%
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.5cm and 0.75cm,
+  ui/.style={box, draw=uicol}]
+  % Entrées
+  \node[ui, text width=2.9cm] (m1) {\textbf{Deux codes}\\{\scriptsize collés dans deux zones de texte}};
+  \node[ui, text width=2.9cm, below=of m1] (m2) {\textbf{Fichiers uploadés}\\{\scriptsize au moins deux \texttt{.py}}};
+  \node[ui, text width=2.9cm, below=of m2] (m3) {\textbf{Dossier}\\{\scriptsize chemin local contenant des \texttt{.py}}};
+  \node[frame, draw=uicol!60, fit=(m1)(m2)(m3),
+        label={[font=\small\bfseries, text=uicol]above:1. Source des codes}] (fin) {};
+
+  \node[ui, right=1.0cm of m2, text width=3.1cm] (ds)
+     {\textbf{Dataset}\\{\scriptsize \texttt{output/streamlit\_runs/}\\\texttt{input\_<uuid>}\\noms nettoyés}};
+  \draw[flow, uicol] (m1.east) -- (ds.west);
+  \draw[flow, uicol] (m2.east) -- (ds.west);
+  \draw[flow, uicol] (m3.east) -- node[below right, font=\tiny, text=graycol]{utilisé tel quel} (ds.west);
+
+  \node[box, right=of ds, text width=3.1cm] (rp)
+     {\textbf{\texttt{run\_pipeline}}\\{\scriptsize dossier \texttt{run\_<uuid>}, \texttt{clean=True}\\CST, AST, TSED, EIIA, NCST}};
+  \draw[flow] (ds) -- (rp);
+
+  \node[box, right=of rp, text width=2.6cm] (csv) {\textbf{CSV}\\{\scriptsize trois scores\\+ \texttt{error}}};
+  \draw[flow] (rp) -- (csv);
+
+  % Pondération
+  \node[ui, above=1.0cm of csv, text width=4.2cm] (w)
+     {\textbf{Barre latérale}\\{\scriptsize poids TSED, EIIA, NCST dans $[0,100]$\\valeurs par défaut 33 / 33 / 34}};
+  \node[ui, right=of csv, text width=3.0cm] (ws)
+     {\textbf{Score pondéré}\\{\scriptsize colonne\\\texttt{weighted\_similarity}}};
+  \draw[flow, uicol] (csv) -- (ws);
+  \draw[flow, uicol] (w.east) -| (ws.north);
+
+  % Sorties
+  \node[ui, below=1.1cm of ws, text width=3.0cm] (tab) {\textbf{Scores par paire}\\{\scriptsize tableau + export CSV}};
+  \node[ui, left=of tab, text width=3.4cm] (art)
+     {\textbf{Arbres produits}\\{\scriptsize un onglet par fichier :\\Code, CST, AST, AST normalisé, NCST}};
+  \draw[flow, uicol] (ws) -- (tab);
+  \draw[flow, uicol] (rp.south) |- (art.west);
+  \node[frame, draw=uicol!60, fit=(tab)(art),
+        label={[font=\small\bfseries, text=uicol]below:3. Restitution}] {};
+\end{tikzpicture}%
+}
+\caption{Fonctionnement de l'interface Streamlit : préparation du jeu de
+fichiers, appel du pipeline, pondération facultative et restitution des
+scores et des arbres.}
+\label{fig:streamlit}
+\end{figure}
+
+\subsection{Préparation des codes à comparer}
+
+L'utilisateur choisit l'une des trois sources proposées :
+\begin{itemize}
+  \item \textbf{Deux codes} : deux zones de texte reçoivent les programmes et
+        leurs noms de fichier. Ils sont écrits dans un dossier temporaire
+        unique \texttt{output/streamlit\_runs/input\_<uuid>} ;
+  \item \textbf{Fichiers uploadés} : au moins deux fichiers \texttt{.py} sont
+        requis, puis copiés dans un dossier temporaire du même type ;
+  \item \textbf{Dossier} : un chemin local est fourni ; l'interface vérifie
+        qu'il contient au moins un fichier \texttt{.py} et affiche le nombre
+        de fichiers détectés.
+\end{itemize}
+
+Les noms fournis par l'utilisateur passent par la fonction
+\texttt{safe\_python\_name}, qui ne garde que le nom de base du fichier et
+ajoute l'extension \texttt{.py} si elle manque. Cette précaution empêche un nom
+uploadé contenant un chemin d'écrire en dehors du dossier temporaire.
+L'identifiant aléatoire (\texttt{uuid}) isole chaque exécution, si bien que
+deux comparaisons successives n'écrasent pas leurs fichiers.
+
+\subsection{Exécution et pondération des scores}
+
+Le bouton \og Comparer les paires \fg{} lance \texttt{run\_pipeline} dans un
+dossier de sortie dédié \texttt{run\_<uuid>}, avec l'option \texttt{clean=True}.
+Les résultats, le dossier d'exécution et le dataset sont conservés dans
+\texttt{st.session\_state}, ce qui évite de relancer le calcul à chaque
+interaction avec la page. En cas d'erreur, l'exception est affichée dans
+l'interface.
+
+La barre latérale propose trois curseurs, de $0$ à $100$ par pas de $1$, pour
+les poids $w_T$, $w_E$ et $w_N$ associés respectivement au TSED, à l'EIIA et au
+NCST. Les valeurs par défaut sont $33$, $33$ et $34$. Le score pondéré ajouté
+à chaque paire est :
+\begin{equation}
+S_{\mathrm{pond}}(A,B) = \frac{w_T\, S_{\mathrm{TSED}}(A,B) + w_E\,
+S_{\mathrm{EIIA}}(A,B) + w_N\, S_{\mathrm{NCST}}(A,B)}{w_T + w_E + w_N}.
+\end{equation}
+Le calcul est refusé si la somme des poids est nulle. Si l'un des trois scores
+est absent ou non numérique, par exemple lorsqu'une erreur d'analyse est
+survenue, la colonne \texttt{weighted\_similarity} reste vide pour cette paire.
+
+Ce score pondéré est un outil d'exploration et non une mesure supplémentaire
+du pipeline. Les poids sont choisis par l'utilisateur ; ils ne sont ni appris
+ni calibrés sur des jugements d'enseignants. Les trois scores restent
+d'ailleurs affichés séparément à côté de $S_{\mathrm{pond}}$, ce qui préserve
+la lecture multi-vues défendue dans la section précédente.
+
+\subsection{Restitution des résultats}
+
+Les résultats sont présentés dans un tableau qui reprend les colonnes du CSV du
+pipeline, complétées par \texttt{weighted\_similarity}. Un bouton permet de
+télécharger ce tableau au format CSV.
+
+L'interface affiche ensuite les arbres produits pour chaque fichier source,
+dans un onglet par fichier (tableau~\ref{tab:onglets}). Les arbres CST, AST et
+AST normalisé sont lus dans le cache du pipeline. Le NCST brut et le NCST
+normalisé sont reconstruits à l'affichage avec \texttt{PythonNCSTBuilder} et
+\texttt{NCSTNormalizer}, puis enregistrés au format texte et JSON dans les
+dossiers \texttt{cache/ncst} et \texttt{cache/normalized\_ncst}. Si un artefact
+attendu est absent, un avertissement est affiché à la place.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{>{\bfseries}lX}
+\toprule
+Onglet & Contenu affiché \\
+\midrule
+Code & Code Python source du fichier \\
+CST & Arbre syntaxique concret Tree-sitter (\texttt{cache/tree\_sitter/*.cst.txt}) \\
+AST & AST simplifié (\texttt{cache/ast/*.ast.txt}) \\
+AST normalisé & AST après anonymisation, abstraction des littéraux, expansion et
+  \emph{inlining} (\texttt{cache/normalized\_ast/*.normalized.txt}) \\
+NCST & Deux sous-onglets : \og NCST brut \fg{} et \og NCST normalisé \fg{}, rendus
+  textuellement par \texttt{render\_text} \\
+\bottomrule
+\end{tabularx}
+\caption{Onglets d'inspection proposés pour chaque fichier source.}
+\label{tab:onglets}
+\end{table}
+
+Cette inspection relie chaque score aux représentations qui l'ont produit :
+lorsqu'un score NCST est surprenant, l'utilisateur peut comparer directement
+les deux NCST normalisés et identifier les nœuds qui ne trouvent pas de
+correspondant.
+
+% =====================================================================
+\section{Protocole d'évaluation des approches}
+% =====================================================================
+
+L'évaluation se déroule en deux phases, résumées par la
+figure~\ref{fig:protocole}. Les trois scores sont d'abord calculés sur des
+variantes contrôlées, obtenues en appliquant une transformation identifiée à
+une correction de référence. Cette étape permet d'observer séparément la
+sensibilité de chaque mesure à un renommage, à une modification de structure
+de contrôle ou à une transformation de l'organisation du code. Les résultats
+sont ensuite produits sur le corpus complet afin d'étudier la distribution des
+scores et d'identifier les paires candidates pour une analyse pédagogique.
+L'interface Streamlit sert de support à cette analyse : elle permet de
+rejouer une paire et d'inspecter ses arbres intermédiaires.
+
+\begin{figure}[htbp]
+\centering
+\shorthandoff{:;!?}%
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.5cm and 0.7cm]
+  \node[box] (ref) {Correction\\de référence};
+  \node[box, right=of ref, font=\scriptsize, align=left] (tr)
+     {\textbf{Transformations}\\renommage\\structure de contrôle\\organisation du code};
+  \node[box, right=of tr] (var) {Variantes\\contrôlées};
+  \node[box, right=of var] (calc1) {Calcul des\\trois scores};
+  \node[box, right=of calc1] (sens) {Sensibilité de\\chaque mesure à\\chaque transformation};
+  \draw[flow] (ref) -- (tr); \draw[flow] (tr) -- (var);
+  \draw[flow] (var) -- (calc1); \draw[flow] (calc1) -- (sens);
+  \node[font=\scriptsize\itshape, text=graycol, below=0.2cm of sens] (int)
+     {interprétation des divergences};
+  \node[frame, draw=tsedcol!60, fit=(ref)(tr)(var)(calc1)(sens)(int),
+        label={[font=\small\bfseries, text=tsedcol]above left:Phase 1 : variantes contrôlées}] (p1) {};
+
+  \node[box, below=2.0cm of ref] (corp) {Corpus\\complet};
+  \node[box, right=1.4cm of corp] (calc2) {Calcul des\\trois scores};
+  \node[box, right=of calc2] (dist) {Distribution\\des scores};
+  \node[box, right=of dist] (cand) {Paires\\candidates};
+  \node[box, right=of cand] (val) {Validation\\pédagogique\\par des enseignants};
+  \draw[flow] (corp) -- (calc2); \draw[flow] (calc2) -- (dist);
+  \draw[flow] (dist) -- (cand); \draw[flow] (cand) -- (val);
+  \node[frame, draw=ncstcol!60, fit=(corp)(calc2)(dist)(cand)(val),
+        label={[font=\small\bfseries, text=ncstcol]above left:Phase 2 : corpus complet}] (p2) {};
+  \draw[flow, graycol] (p1.south) -- (p2.north);
+\end{tikzpicture}%
+}
+\caption{Protocole d'évaluation en deux phases.}
+\label{fig:protocole}
+\end{figure}
+
+Les mesures ne sont pas interprétées comme une vérité terrain automatique. La
+comparaison porte d'abord sur leur comportement attendu face aux variantes,
+puis sur leur complémentarité. Les cas où les scores divergent sont conservés
+comme des situations informatives : ils permettent d'identifier la dimension
+de la similarité capturée par chaque approche et de préparer une validation
+ultérieure par des enseignants, seuls à même de juger si deux exercices sont
+réellement substituables d'un point de vue pédagogique.
+
+
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+
+
+\chapter{Ma proposition}
+\label{chap:proposition}
+
+Ce chapitre présente le pipeline multi-niveaux développé pour évaluer la
+substituabilité algorithmique entre des exercices de programmation.
+L'objectif n'est pas de réduire la similarité à une seule propriété du code,
+mais de comparer les corrections selon trois niveaux d'abstraction
+complémentaires : la structure globale, la topologie syntaxique détaillée et
+l'organisation des structures de contrôle.
+
+% =====================================================================
+\section{Architecture globale du pipeline}
+% =====================================================================
+
+Pour chaque paire de programmes $(A,B)$, le pipeline construit plusieurs
+représentations du code et calcule trois mesures distinctes :
+
+\begin{enumerate}
+    \item l'\textbf{EIIA}, qui compare des profils quantitatifs globaux
+    extraits de l'AST normalisé ;
+    \item le \textbf{TSED}, distance d'édition calculée sur des AST normalisés
+    afin d'évaluer finement la topologie syntaxique ;
+    \item le \textbf{NCST}, qui isole les structures de contrôle afin de
+    comparer le squelette algorithmique.
+\end{enumerate}
+
+Ces trois mesures sont calculées séparément pour chaque paire. Le pipeline
+produit donc trois scores indépendants, chacun décrivant une dimension
+particulière de la ressemblance entre les programmes. Cette organisation
+multi-vues permet notamment de repérer les cas où deux corrections ont une
+complexité globale proche, mais des stratégies de contrôle différentes. Elle
+est cohérente avec les travaux qui distinguent la similarité de contenu, de
+structure et de finalité pédagogique \cite{pelanek_2020,reddy_graph-based_2025}.
+
+La chaîne de traitement est résumée par la figure~\ref{fig:pipeline_global}.
+Le code source est d'abord analysé par Tree-sitter, qui produit un arbre
+syntaxique concret (CST). Cet arbre alimente deux branches : la première le
+convertit en AST simplifié puis le normalise, ce qui sert de base commune à
+l'EIIA et au TSED ; la seconde construit directement le NCST à partir du CST,
+le normalise puis apparie les structures de contrôle. Les trois scores sont
+finalement exportés dans des colonnes séparées, sans fusion.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.2cm and 0.9cm]
+  % --- Tronc commun
+  \node[donnee] (src) {Code source\\Python};
+  \node[etape, right=of src] (parse) {Analyse\\Tree-sitter};
+  \node[donnee, right=of parse] (cst) {Arbre syntaxique\\concret (CST)};
+
+  % --- Branche AST
+  \node[etape, below left=1.3cm and -0.6cm of cst] (adapt)
+       {Conversion\\CST $\rightarrow$ AST};
+  \node[etape, below=of adapt] (norm) {Normalisation\\de l'AST};
+  \node[donnee, below=of norm] (astn) {AST normalisé};
+
+  \node[etape=cEIIA, below left=1.0cm and -0.2cm of astn] (eiia)
+       {Profil structurel\\+ distance euclidienne};
+  \node[etape=cTSED, below right=1.0cm and -0.2cm of astn] (tsed)
+       {Fonction principale\\+ distance d'édition};
+
+  % --- Branche NCST
+  \node[etape=cNCST, below right=1.3cm and 1.6cm of cst] (build)
+       {Construction\\du NCST};
+  \node[etape=cNCST, below=of build] (nnorm) {Normalisation\\structurelle};
+  \node[etape=cNCST, below=of nnorm] (match) {Appariement\\ordonné};
+
+  % --- Scores (alignés)
+  \node[scorebox=cTSED, below=0.8cm of tsed] (s2) {$S_{\mathrm{TSED}}$};
+  \node[scorebox=cEIIA] (s1) at (eiia |- s2) {$S_{\mathrm{EIIA}}$};
+  \node[scorebox=cNCST] (s3) at (match |- s2) {$S_{\mathrm{NCST}}$};
+
+  % --- Export
+  \path (s1.south) -- (s3.south) coordinate[midway] (milieu);
+  \node[donnee, text width=12.5cm, anchor=north] (csv) at ([yshift=-1.4cm]milieu)
+       {Export CSV : \texttt{source\_a}, \texttt{source\_b},
+        \texttt{tsed\_similarity}, \texttt{eiia\_similarity},
+        \texttt{ncst\_similarity}, \texttt{error}};
+
+  % --- Flèches
+  \draw[fleche] (src) -- (parse);
+  \draw[fleche] (parse) -- (cst);
+  \draw[fleche] (cst.south) -- ++(0,-0.45) -| (adapt.north);
+  \draw[fleche] (cst.south) -- ++(0,-0.45) -| (build.north);
+  \draw[fleche] (adapt) -- (norm);
+  \draw[fleche] (norm) -- (astn);
+  \draw[fleche] (astn.south) -- ++(0,-0.4) -| (eiia.north);
+  \draw[fleche] (astn.south) -- ++(0,-0.4) -| (tsed.north);
+  \draw[fleche] (build) -- (nnorm);
+  \draw[fleche] (nnorm) -- (match);
+  \draw[fleche] (eiia) -- (s1);
+  \draw[fleche] (tsed) -- (s2);
+  \draw[fleche] (match) -- (s3);
+  \draw[fleche] (s1.south) -- (s1.south |- csv.north);
+  \draw[fleche] (s2.south) -- (s2.south |- csv.north);
+  \draw[fleche] (s3.south) -- (s3.south |- csv.north);
+
+  % --- Cadres de fond
+  \begin{scope}[on background layer]
+    \node[cadre=cNeutre, fit=(src)(parse)(cst)] (fA) {};
+    \node[cadre=cTSED, fit=(adapt)(norm)(astn)(eiia)(tsed)(s1)(s2),
+          inner sep=10pt] (fB) {};
+    \node[cadre=cNCST, fit=(build)(nnorm)(match)(s3), inner sep=10pt] (fC) {};
+  \end{scope}
+  \node[titrecadre=cNeutre, anchor=west] at ([xshift=8pt]fA.north west)
+       {Tronc commun};
+  \node[titrecadre=cTSED, anchor=west] at ([xshift=8pt]fB.north west)
+       {Branche AST (EIIA et TSED)};
+  \node[titrecadre=cNCST, anchor=west] at ([xshift=8pt]fC.north west)
+       {Branche NCST};
+  \node[etiq, below=2pt of csv] {trois colonnes indépendantes,
+        aucune moyenne pondérée};
+\end{tikzpicture}%
+}
+\caption{Architecture globale du pipeline d'évaluation de la similarité
+multi-niveaux. L'EIIA et le TSED partagent l'AST normalisé ; le NCST est
+construit directement à partir du CST.}
+\label{fig:pipeline_global}
+\end{figure}
+
+Cette architecture permet de conserver simultanément une vision globale,
+une analyse syntaxique détaillée et une lecture centrée sur le contrôle du
+programme. Les étapes communes garantissent que les trois mesures sont
+calculées à partir des mêmes corrections, tandis que les branches spécialisées
+préservent leurs informations propres. Un même couple de programmes peut ainsi
+être proche selon l'EIIA, mais différent selon le TSED ou le NCST. Cette
+complémentarité est essentielle pour interpréter les résultats sans confondre
+complexité globale, proximité syntaxique et similitude de stratégie.
+
+Le tableau a la page suivante ~\ref{tab:recap_approches} résume ce que chaque approche conserve,
+ignore et mesure.
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{0.9}
+\begin{tabularx}{\textwidth}{>{\bfseries}l X X X}
+\toprule
+ & \textcolor{cEIIA}{\textbf{EIIA}}
+ & \textcolor{cTSED}{\textbf{TSED}}
+ & \textcolor{cNCST}{\textbf{NCST}} \\
+\midrule
+Représentation & AST normalisé, résumé en vecteur
+               & AST normalisé complet
+               & Arbre des structures de contrôle \\
+Information conservée & Effectifs de nœuds et profondeur
+               & Types, opérateurs, ordre et hiérarchie
+               & Types de contrôle, niveaux, ordre \\
+Information ignorée & Position et agencement des nœuds
+               & Noms et valeurs concrètes
+               & Expressions et détails syntaxiques \\
+Calcul & Distance euclidienne normalisée
+       & Distance d'édition de Zhang-Shasha
+       & Appariement ordonné, indice de Dice \\
+Question posée & Les programmes ont-ils une taille et une complexité comparables ?
+               & Les arbres sont-ils proches nœud à nœud ?
+               & Les programmes suivent-ils le même schéma de contrôle ? \\
+\bottomrule
+\end{tabularx}
+\caption{Synthèse des trois niveaux de représentation du pipeline.}
+\label{tab:recap_approches}
+\end{table}
+
+% =====================================================================
+\section{Évaluation de l'information indépendante de l'arbre (EIIA)}
+% =====================================================================
+
+L'EIIA fournit une mesure macroscopique de la proximité entre deux
+programmes. Elle repose sur un profil structurel extrait en parcourant
+l'ensemble des nœuds de l'AST normalisé. Pour un programme $A$, le profil est
+représenté par le vecteur à neuf composantes :
+
+\begin{equation}
+V_A = (n_{\mathrm{nodes}}, n_{\mathrm{operators}},
+n_{\mathrm{operands}}, n_{\mathrm{assignments}}, n_{\mathrm{selections}},
+n_{\mathrm{iterations}}, d_{\max}, n_{\mathrm{calls}}, n_{\mathrm{returns}}).
+\end{equation}
+
+Le tableau~\ref{tab:eiia_composantes} précise les types de nœuds comptés pour
+chaque composante.
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{>{\ttfamily}l l l}
+\toprule
+\textrm{\textbf{Composante}} & \textbf{Signification} & \textbf{Nœuds comptés} \\
+\midrule
+n\_nodes       & taille de l'arbre        & tous les nœuds \\
+n\_operators   & opérateurs              & \texttt{BINARY\_OP}, \texttt{COMPARE}, \texttt{BOOLEAN\_OP}, \texttt{UNARY\_OP} \\
+n\_operands    & opérandes               & \texttt{IDENTIFIER}, \texttt{NUMBER}, \texttt{STRING}, \texttt{BOOLEAN}, \texttt{NULL} \\
+n\_assignments & affectations            & \texttt{ASSIGN}, \texttt{AUG\_ASSIGN} \\
+n\_selections  & sélections              & \texttt{IF}, \texttt{ELIF}, \texttt{ELSE}, \texttt{TERNARY} \\
+n\_iterations  & répétitions             & \texttt{FOR}, \texttt{WHILE} \\
+d\_max         & profondeur maximale     & --- \\
+n\_calls       & appels de fonction      & \texttt{CALL} \\
+n\_returns     & retours                 & \texttt{RETURN} \\
+\bottomrule
+\end{tabular}
+\caption{Composantes du profil structurel utilisé par l'EIIA.}
+\label{tab:eiia_composantes}
+\end{table}
+
+La distance euclidienne entre les profils de deux programmes est définie par :
+
+\begin{equation}
+d(V_A,V_B) = \lVert V_A - V_B \rVert_2 .
+\end{equation}
+
+Cette distance est normalisée par la norme maximale des deux profils :
+
+\begin{equation}
+d_{\mathrm{norm}}(A,B) =
+\frac{d(V_A,V_B)}{\max\left(\lVert V_A \rVert_2,
+\lVert V_B \rVert_2,\varepsilon\right)},
+\qquad \varepsilon = 10^{-12}.
+\end{equation}
+
+Le score EIIA est alors obtenu par :
+
+\begin{equation}
+S_{\mathrm{EIIA}}(A,B) = \max\left(0,\,1-d_{\mathrm{norm}}(A,B)\right).
+\end{equation}
+
+La figure~\ref{fig:eiia_calcul} illustre cette chaîne de calcul. Aucune
+pondération n'est appliquée aux composantes : chaque métrique contribue de
+manière identique à la distance.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.6cm and 1.5cm]
+  \node[etape=cEIIA, text width=2.6cm] (astA) {AST normalisé\\de $A$};
+  \node[donnee=cEIIA, text width=2.0cm, right=of astA] (vA) {$V_A \in \mathbb{N}^9$};
+  \node[etape=cEIIA, text width=2.6cm, below=1.0cm of astA] (astB) {AST normalisé\\de $B$};
+  \node[donnee=cEIIA, text width=2.0cm, right=of astB] (vB) {$V_B \in \mathbb{N}^9$};
+  \draw[fleche] (astA) -- node[above, etiq] {comptage} (vA);
+  \draw[fleche] (astB) -- node[above, etiq] {comptage} (vB);
+
+  \coordinate (m) at ($0.5*(vA.east)+0.5*(vB.east)$);
+  \node[etape=cEIIA, text width=2.6cm, minimum height=1.4cm, right=1.2cm of m] (dist)
+       {$d = \lVert V_A - V_B\rVert_2$};
+  \node[etape=cEIIA, text width=4.2cm, minimum height=1.4cm, right=0.7cm of dist] (dn)
+       {\mbox{$d_{\mathrm{norm}} = \dfrac{d}{\max(\lVert V_A\rVert_2,\lVert V_B\rVert_2,\varepsilon)}$}};
+  \node[scorebox=cEIIA, text width=4.6cm, minimum height=1.4cm, right=0.7cm of dn] (s)
+       {\mbox{$S_{\mathrm{EIIA}} = \max(0,\,1 - d_{\mathrm{norm}})$}};
+
+  \draw[fleche] (vA.east) -- ++(0.5,0) |- (dist.west);
+  \draw[fleche] (vB.east) -- ++(0.5,0) |- (dist.west);
+  \draw[fleche] (dist) -- (dn);
+  \draw[fleche] (dn) -- (s);
+
+  \begin{scope}[on background layer]
+    \node[cadre=cEIIA, fit=(astA)(vA)(astB)(vB)] (f1) {};
+    \node[cadre=cEIIA, fit=(dist)(dn)(s), inner ysep=14pt] (f2) {};
+  \end{scope}
+  \node[titrecadre=cEIIA, anchor=west] at ([xshift=8pt]f1.north west)
+       {1. Extraction des profils};
+  \node[titrecadre=cEIIA, anchor=west] at ([xshift=8pt]f2.north west)
+       {2. Comparaison non pondérée};
+  \node[etiq, anchor=north east] at ([yshift=-3pt]f2.south east)
+       {score borné dans $[0,1]$};
+\end{tikzpicture}%
+}
+\caption{Chaîne de calcul de l'EIIA : extraction de deux profils
+structurels, puis distance euclidienne normalisée.}
+\label{fig:eiia_calcul}
+\end{figure}
+
+Cette approche s'inscrit dans la famille des métriques statiques qui
+décrivent la taille et la complexité d'un programme sans nécessiter
+l'alignement de deux arbres ou graphes \cite{messer_2024}. Des travaux
+consacrés à l'évaluation de la difficulté et de l'effort de programmation
+montrent également que des métriques telles que la taille du code et la
+complexité cyclomatique peuvent être corrélées à un indice d'effort interne,
+l'\emph{Index of Internal Effort} (IIE) \cite{de_oliveira_assessing_2024}.
+Cette observation soutient l'utilisation de profils quantitatifs comme
+indicateurs de complexité, sans établir pour autant une équivalence entre
+l'EIIA et l'IIE. L'EIIA constitue ainsi un indicateur de la proximité globale
+d'architecture et de complexité, sans prétendre décrire à lui seul la
+stratégie algorithmique détaillée : deux programmes ayant les mêmes effectifs
+de nœuds obtiennent un score maximal même si ces nœuds sont agencés
+différemment.
+
+% =====================================================================
+\section{AST normalisé et distance TSED}
+% =====================================================================
+
+La deuxième approche évalue la structure grammaticale détaillée du code. Le
+code Python est d'abord analysé avec Tree-sitter, puis converti en un AST
+simplifié dont les nœuds portent des types unifiés (\texttt{FUNCTION},
+\texttt{ASSIGN}, \texttt{IF}, \texttt{FOR}, \texttt{BINARY\_OP},
+\texttt{CALL}, \texttt{IDENTIFIER}, etc.). Une phase de normalisation réduit
+ensuite l'influence des choix de style et des détails formels qui ne
+modifient pas la logique de résolution.
+
+\subsection{Normalisation de l'AST}
+
+La normalisation transforme les deux arbres avant le calcul de la distance
+d'édition. Elle comprend les opérations suivantes :
+
+\begin{itemize}
+    \item l'\textbf{anonymisation canonique} des paramètres, des variables
+    locales et des fonctions du fichier, remplacés dans l'ordre d'apparition
+    par \texttt{PARAM\_1}, \texttt{VAR\_1} et \texttt{FUNC\_1} ;
+    \item l'\textbf{abstraction des littéraux}, qui remplace les valeurs
+    concrètes par les catégories \texttt{NUM}, \texttt{STR}, \texttt{BOOL}
+    et \texttt{NULL} ;
+    \item l'\textbf{expansion des affectations augmentées}, qui réécrit
+    \texttt{a += b} sous la forme canonique \texttt{a = a + b} ;
+    \item l'\textbf{inlining des fonctions auxiliaires simples}, limité aux
+    fonctions sûres : un seul \texttt{return} portant une expression unique,
+    sans boucle, condition, appel, exception ni récursion.
+\end{itemize}
+
+Les opérateurs, tels que \texttt{+}, \texttt{\%} ou \texttt{==}, ainsi que
+les structures de contrôle sont conservés, car ils portent une information
+importante sur la stratégie de résolution. Les commentaires sont supprimés
+dès la conversion de l'arbre. La figure~\ref{fig:normalisation_ast} illustre
+l'effet combiné de ces règles sur une instruction.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    level distance=1.0cm,
+    level 1/.style={sibling distance=3.4cm},
+    level 2/.style={sibling distance=2.9cm},
+    level 3/.style={sibling distance=2.9cm},
+    edge from parent/.style={draw=cNeutre, thick}]
+
+  % --- Avant
+  \node[code] (cAvant) at (0,0) {\# cumul\\total += x * 2};
+  \begin{scope}[shift={(0,-1.4)}]
+    \node[noeud=cAlerte] (r1) {AUG\_ASSIGN(+=)}
+      child {node[noeud=cAlerte] (l1) {IDENTIFIER(total)}}
+      child {node[noeud] {BINARY\_OP(*)}
+        child {node[noeud=cAlerte] (l2) {IDENTIFIER(x)}}
+        child {node[noeud=cAlerte] (l3) {NUMBER(2)}}};
+  \end{scope}
+
+  % --- Règles
+  \node[etape=cTSED, text width=3.6cm, align=left, font=\sffamily\scriptsize]
+       (regles) at (6.6,-2.3)
+       {\textbf{Règles appliquées}\\[2pt]
+        \textbullet\ commentaire supprimé\\
+        \textbullet\ \texttt{total} $\rightarrow$ \texttt{VAR\_1}\\
+        \textbullet\ \texttt{x} $\rightarrow$ \texttt{VAR\_2}\\
+        \textbullet\ \texttt{2} $\rightarrow$ \texttt{NUM}\\
+        \textbullet\ \texttt{+=} $\rightarrow$ \texttt{= \dots\ +}\\
+        \textbullet\ opérateurs conservés};
+
+  % --- Après
+  \node[code] (cApres) at (13.6,0) {VAR\_1 = VAR\_1 + VAR\_2 * NUM};
+  \begin{scope}[shift={(13.0,-1.4)}]
+    \node[noeud=cNCST] (r2) {ASSIGN}
+      child {node[noeud=cNCST] (m1) {IDENTIFIER(VAR\_1)}}
+      child {node[noeud] {BINARY\_OP(+)}
+        child {node[noeud=cNCST] {IDENTIFIER(VAR\_1)}}
+        child {node[noeud] {BINARY\_OP(*)}
+          child {node[noeud=cNCST] (m2) {IDENTIFIER(VAR\_2)}}
+          child {node[noeud=cNCST] (m3) {NUMBER(NUM)}}}};
+  \end{scope}
+
+  \begin{scope}[on background layer]
+    \node[cadre=cAlerte, fit=(cAvant)(r1)(l1)(l2)(l3)] (fav) {};
+    \node[cadre=cNCST, fit=(cApres)(r2)(m1)(m2)(m3)] (fap) {};
+  \end{scope}
+  \draw[fleche] (fav.east |- regles) -- (regles.west);
+  \draw[fleche] (regles.east) -- (fap.west |- regles);
+  \node[titrecadre=cAlerte, anchor=west] at ([xshift=8pt]fav.north west) {Avant};
+  \node[titrecadre=cNCST, anchor=west] at ([xshift=8pt]fap.north west) {Après};
+\end{tikzpicture}%
+}
+\caption{Normalisation d'une instruction. Les nœuds en rouge portent des
+détails de surface (noms, valeurs, sucre syntaxique) ; après normalisation,
+ils sont remplacés par des formes canoniques (en vert). Les opérateurs sont
+conservés.}
+\label{fig:normalisation_ast}
+\end{figure}
+
+\subsection{Distance d'édition entre arbres}
+
+La distance TSED correspond à la distance d'édition entre les deux arbres
+normalisés, calculée selon l'algorithme de Zhang et Shasha
+\cite{zhang_simple_1989,song_revisiting_2024}. Chaque nœud est décrit par un
+label associant son type à sa valeur résiduelle, par exemple
+\texttt{BINARY\_OP(+)} ou \texttt{IDENTIFIER(VAR\_1)}. Les coûts
+d'insertion, de suppression et de substitution sont unitaires :
+
+\begin{equation}
+c_{\mathrm{ins}} = c_{\mathrm{del}} = 1,
+\qquad
+c_{\mathrm{sub}}(u,v) =
+\begin{cases}
+0 & \text{si } \mathrm{label}(u) = \mathrm{label}(v),\\
+1 & \text{sinon.}
+\end{cases}
+\end{equation}
+
+Si $TED(A,B)$ désigne la distance d'édition et $|A|$ et $|B|$ le nombre de
+nœuds des deux arbres, le score est défini par :
+
+\begin{equation}
+S_{\mathrm{TSED}}(A,B) =
+1 - \frac{TED(A,B)}{\max\left(|A|,|B|\right)}.
+\end{equation}
+
+La figure~\ref{fig:tsed_exemple} montre un cas minimal : deux fonctions qui
+ne diffèrent que par un opérateur. Une seule substitution suffit à
+transformer un arbre en l'autre.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.92\textwidth}{!}{%
+\begin{tikzpicture}[
+    level distance=1.0cm,
+    level 1/.style={sibling distance=3.6cm},
+    level 2/.style={sibling distance=3.6cm},
+    edge from parent/.style={draw=cNeutre, thick}]
+
+  \node[code] (ca) at (0,1.3) {return a + b};
+  \node[noeud=cTSED] (ra) at (0,0) {RETURN}
+    child {node[noeud=cAlerte, very thick] (opa) {BINARY\_OP(+)}
+      child {node[noeud=cTSED] {IDENTIFIER(PARAM\_1)}}
+      child {node[noeud=cTSED] {IDENTIFIER(PARAM\_2)}}};
+
+  \node[code] (cb) at (9,1.3) {return a * b};
+  \node[noeud=cTSED] (rb) at (9,0) {RETURN}
+    child {node[noeud=cAlerte, very thick] (opb) {BINARY\_OP(*)}
+      child {node[noeud=cTSED] {IDENTIFIER(PARAM\_1)}}
+      child {node[noeud=cTSED] {IDENTIFIER(PARAM\_2)}}};
+
+  \draw[->, very thick, cAlerte, dashed] (opa) -- node[above, font=\sffamily\scriptsize]
+       {substitution, coût 1} (opb);
+
+  \node[scorebox=cTSED, text width=11cm] at (4.5,-3.4)
+       {$TED = 1, \;\; |A| = |B| = 4 \;\;\Rightarrow\;\;
+         S_{\mathrm{TSED}} = 1 - \frac{1}{4} = 0{,}75$};
+
+  \begin{scope}[on background layer]
+    \node[cadre=cTSED, fit=(ca)(current bounding box)] {};
+  \end{scope}
+\end{tikzpicture}%
+}
+\caption{Exemple de calcul TSED sur deux AST normalisés de quatre nœuds.}
+\label{fig:tsed_exemple}
+\end{figure}
+
+Dans le cas de programmes modulaires, le système sélectionne la fonction dont
+l'AST contient le plus de nœuds (la première en cas d'égalité) afin de
+comparer en priorité la fonction centrale de la correction.
+
+% =====================================================================
+\section{Squelette algorithmique et arbre NCST}
+% =====================================================================
+
+La troisième approche extrait l'organisation logique du programme en isolant
+les structures qui déterminent le flux de contrôle. Deux AST peuvent être
+différents tout en présentant un squelette algorithmique proche lorsqu'ils
+partagent la même séquence d'imbrications et de décisions.
+
+\subsection{Construction et normalisation du NCST}
+
+Le NCST (\emph{Normalized Control Structure Tree}) est construit directement
+à partir du CST produit par Tree-sitter. Les instructions sont regroupées en
+séquences, et chaque structure de contrôle devient un nœud typé relié à ses
+blocs par des arêtes étiquetées. La normalisation structurelle supprime
+ensuite les nœuds d'expression et de branche, et ne conserve que les nœuds
+décrivant le contrôle de flux :
+
+\begin{itemize}
+    \item les itérations (\texttt{ITERATION}), issues des boucles
+    \texttt{for} et \texttt{while} ;
+    \item les sélections (\texttt{SELECTION}), issues des \texttt{if},
+    \texttt{elif} et \texttt{else} ;
+    \item les exceptions et leurs gestionnaires (\texttt{EXCEPTION},
+    \texttt{HANDLER}) ;
+    \item les transferts (\texttt{TRANSFER}), issus de \texttt{return} et
+    \texttt{raise} ;
+    \item les nœuds d'encapsulation (\texttt{PROGRAM}, \texttt{CLASS},
+    \texttt{FUNCTION}, \texttt{SEQUENCE}).
+\end{itemize}
+
+Seules les arêtes structurelles sont conservées. Elles déterminent le niveau
+d'imbrication (\texttt{level}) de chaque nœud, selon la règle résumée par la
+figure~\ref{fig:ncst_niveaux}.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.9\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.5cm and 1.2cm]
+  \node[noeud=cNCST, minimum width=2.2cm] (p) {nœud parent\\niveau $\ell$};
+  \node[noeud=cNCST, minimum width=2.2cm, below left=1.3cm and 0.6cm of p]
+       (s1) {nœud enfant\\niveau $\ell$};
+  \node[noeud=cNCST, minimum width=2.2cm, below right=1.3cm and 0.6cm of p]
+       (s2) {nœud enfant\\niveau $\ell+1$};
+  \draw[fleche, draw=cNCST] (p) -- node[left=6pt, font=\ttfamily\scriptsize,
+       align=right] {CONTAINS\\NEXT} (s1);
+  \draw[fleche, draw=cNCST] (p) -- node[right=16pt, font=\ttfamily\scriptsize,
+       align=left] {BODY, THEN, ELIF,\\ELSE, CASE, DEFAULT,\\TRY, CATCH, FINALLY} (s2);
+  \node[etiq, below=4pt of s1] {même niveau};
+  \node[etiq, below=4pt of s2] {entrée dans un bloc};
+  \begin{scope}[on background layer]
+    \node[cadre=cNCST, fit={(p)(s1)(s2)([xshift=-3.2cm]s1.west)([xshift=4.2cm]s2.east)([yshift=-0.7cm]s2.south)}, inner sep=12pt] {};
+  \end{scope}
+\end{tikzpicture}%
+}
+\caption{Calcul du niveau structurel dans le NCST : seules les arêtes qui
+ouvrent un bloc incrémentent le niveau.}
+\label{fig:ncst_niveaux}
+\end{figure}
+
+\subsection{Invariance du squelette de contrôle}
+
+La puissance descriptive de cette représentation peut être illustrée par
+deux fonctions dont les expressions et les valeurs manipulées sont
+différentes (figure~\ref{fig:ncst_equivalence}). Le premier programme
+recherche un nombre pair, tandis que le second recherche une valeur cible.
+Malgré cette différence de domaine, les deux solutions parcourent une
+collection, testent une condition puis retournent immédiatement un résultat
+en cas de succès, avant d'effectuer un retour par défaut. Après élagage des
+expressions, leur squelette de contrôle est identique.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    level distance=1.15cm,
+    level 1/.style={sibling distance=2.6cm},
+    edge from parent/.style={draw=cNCST, thick}]
+
+  \node[code, text width=5.0cm] (codeA) at (0,0.9)
+  {\textbf{Code A}\\[2pt]
+   def find\_even(numbers):\\
+   \quad for n in numbers:\\
+   \quad\quad if n \% 2 == 0:\\
+   \quad\quad\quad return n\\
+   \quad return -1};
+
+  \node[code, text width=5.0cm] (codeB) at (0,-2.4)
+  {\textbf{Code B}\\[2pt]
+   def search\_target(array, target):\\
+   \quad for element in array:\\
+   \quad\quad if element == target:\\
+   \quad\quad\quad return True\\
+   \quad return False};
+
+  \node[etape=cNCST, text width=2.2cm] (extr) at (5.2,-0.75)
+       {Extraction\\+ élagage\\des expressions};
+  \draw[fleche] (codeA.east) -- (extr.west);
+  \draw[fleche] (codeB.east) -- (extr.west);
+
+  \begin{scope}[shift={(10.2,1.0)}]
+    \node[noeud=cNCST] (f) {FUNCTION}
+      child {node[noeud=cNCST] (it) {ITERATION}
+        child {node[noeud=cNCST] (sel) {SELECTION}
+          child {node[noeud=cNCST] (t1) {TRANSFER}}}}
+      child {node[noeud=cNCST] (t2) {TRANSFER}};
+  \end{scope}
+  \node[font=\ttfamily\tiny, text=cNCST, left=1pt of $0.5*(f)+0.5*(it)$] {BODY};
+  \node[font=\ttfamily\tiny, text=cNCST, left=1pt of $0.5*(it)+0.5*(sel)$] {BODY};
+  \node[font=\ttfamily\tiny, text=cNCST, left=1pt of $0.5*(sel)+0.5*(t1)$] {THEN};
+
+  % Bandes de niveau
+  \foreach \y/\l in {1.0/0, -0.15/1, -1.30/2, -2.45/3}{
+    \node[font=\sffamily\scriptsize, text=cNeutre, anchor=west] at (13.2,\y)
+         {niveau \l};
+    \draw[cGrille, dashed] (7.9,\y-0.55) -- (14.5,\y-0.55);
+  }
+  \draw[fleche] (extr.east) -- (7.9,-0.75);
+
+  \node[scorebox=cNCST, text width=4cm] at (10.6,-3.6) {$S_{\mathrm{NCST}}(A,B) = 1$};
+
+  \begin{scope}[on background layer]
+    \node[cadre=cNeutre, fit=(codeA)(codeB)] (fc) {};
+    \node[cadre=cNCST, fit={(7.9,1.55) (14.5,-4.1)}] (fn) {};
+  \end{scope}
+  \node[titrecadre=cNeutre, anchor=west] at ([xshift=8pt]fc.north west)
+       {Programmes sources};
+  \node[titrecadre=cNCST, anchor=west] at ([xshift=8pt]fn.north west)
+       {NCST commun (nœuds SEQUENCE omis)};
+\end{tikzpicture}%
+}
+\caption{Invariance du NCST sur deux programmes différents. Les codes A et B
+utilisent des variables, des opérateurs et des valeurs de retour distincts,
+mais leur élagage produit la même topologie de contrôle.}
+\label{fig:ncst_equivalence}
+\end{figure}
+
+Dans cet exemple, le score $S_{\mathrm{NCST}}=1$ exprime une correspondance
+parfaite du squelette conservé par la représentation. Il ne signifie pas que
+les deux fonctions sont équivalentes du point de vue de leur résultat, mais
+qu'elles partagent une même organisation de résolution : itération, test,
+retour anticipé et retour par défaut.
+
+\subsection{Appariement ordonné et score}
+
+Le calcul de similarité repose sur un appariement ordonné. Les nœuds de
+chaque arbre sont indexés dans l'ordre du programme ; le plus petit arbre
+sert de référence et, pour chacun de ses nœuds, l'algorithme recherche dans
+le plus grand arbre le premier nœud compatible. Deux nœuds sont compatibles
+s'ils possèdent le même type (\texttt{kind}), le même niveau d'imbrication
+(\texttt{level}) et une position cohérente avec les appariements déjà
+réalisés. Si $M$ désigne le nombre de nœuds appariés, le score NCST est
+calculé avec l'indice de Sørensen-Dice :
+
+\begin{equation}
+S_{\mathrm{NCST}}(A,B) = \frac{2M}{|A|+|B|}.
+\end{equation}
+
+La figure~\ref{fig:ncst_matching} illustre ce calcul lorsque l'un des deux
+programmes ne comporte pas de retour par défaut.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.35cm]
+  % Arbre B (référence, plus petit) en haut, A en bas, ordre du programme
+  \node[font=\sffamily\small\bfseries, text=cNCST, anchor=east] at (-1.5,0)
+       {$B$ (référence)};
+  \node[font=\sffamily\small\bfseries, text=cNCST, anchor=east] at (-1.5,-2.2)
+       {$A$};
+
+  \foreach \i/\k/\l in {1/FUNCTION/0, 2/ITERATION/1, 3/SELECTION/2, 4/TRANSFER/3}{
+    \node[noeud=cNCST, minimum width=2.3cm] (b\i) at (3*\i-3,0)
+         {\k\\[-1pt]{\tiny niveau \l}};
+  }
+  \foreach \i/\k/\l in {1/FUNCTION/0, 2/ITERATION/1, 3/SELECTION/2, 4/TRANSFER/3}{
+    \node[noeud=cNCST, minimum width=2.3cm] (a\i) at (3*\i-3,-2.2)
+         {\k\\[-1pt]{\tiny niveau \l}};
+  }
+  \node[noeud=cAlerte, minimum width=2.3cm] (a5) at (12,-2.2)
+       {TRANSFER\\[-1pt]{\tiny niveau 1}};
+
+  \foreach \i in {1,...,4}{
+    \draw[<->, thick, cNCST, dashed] (b\i) -- (a\i);
+  }
+  \foreach \i/\j in {1/2,2/3,3/4}{
+    \draw[->, cNeutre] (b\i) -- (b\j);
+    \draw[->, cNeutre] (a\i) -- (a\j);
+  }
+  \draw[->, cNeutre] (a4) -- (a5);
+  \node[etiq, above=2pt of a5] {non apparié};
+  \node[etiq] at (4.5,-2.95) {appariements (pointillés) : même \texttt{kind},
+        même \texttt{level}, ordre croissant};
+
+  \node[scorebox=cNCST, text width=10cm] at (5,-3.9)
+       {$M = 4,\;\; |A| = 5,\;\; |B| = 4 \;\;\Rightarrow\;\;
+         S_{\mathrm{NCST}} = \frac{2\times 4}{5+4} \approx 0{,}89$};
+
+  \begin{scope}[on background layer]
+    \node[cadre=cNCST, fit={(-4.6,0.8) (13.4,-4.5)}] {};
+  \end{scope}
+\end{tikzpicture}%
+}
+\caption{Appariement ordonné de deux NCST linéarisés dans l'ordre du
+programme. Le retour par défaut de $A$ n'a pas d'équivalent dans $B$.}
+\label{fig:ncst_matching}
+\end{figure}
+
+Un score égal à $1$ indique une correspondance topologique parfaite des
+structures de contrôle conservées ; chaque nœud non apparié diminue le score
+proportionnellement à la taille totale des deux arbres.
+
+% =====================================================================
+\section{Exécution et synthèse des mesures}
+% =====================================================================
+
+Le pipeline ne fusionne pas les trois mesures au moyen d'une moyenne
+pondérée. Elles décrivent des dimensions distinctes de la similarité
+logicielle, et leur combinaison prématurée masquerait la contribution de
+chaque représentation. Pour chaque paire de programmes, le système exporte
+donc séparément les trois scores $S_{\mathrm{EIIA}}$, $S_{\mathrm{TSED}}$ et
+$S_{\mathrm{NCST}}$, selon le format présenté dans le
+tableau~\ref{tab:export_csv}.
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l l >{\color{cTSED}}c >{\color{cEIIA}}c >{\color{cNCST}}c l}
+\toprule
+\texttt{source\_a} & \texttt{source\_b} & \texttt{tsed\_similarity}
+& \texttt{eiia\_similarity} & \texttt{ncst\_similarity} & \texttt{error} \\
+\midrule
+\texttt{ex\_A.py} & \texttt{ex\_B.py} & $S_{\mathrm{TSED}}$ & $S_{\mathrm{EIIA}}$
+& $S_{\mathrm{NCST}}$ & --- \\
+\texttt{ex\_A.py} & \texttt{ex\_C.py} & $S_{\mathrm{TSED}}$ & $S_{\mathrm{EIIA}}$
+& $S_{\mathrm{NCST}}$ & --- \\
+\multicolumn{6}{c}{\dots} \\
+\bottomrule
+\end{tabular}
+\caption{Structure du fichier CSV exporté : une ligne par paire, une colonne
+par mesure, et une colonne d'erreur en cas d'échec de l'analyse.}
+\label{tab:export_csv}
+\end{table}
+
+Cette sortie conserve une information interprétable sur la nature de la
+proximité. Le tableau~\ref{tab:lecture_scores} donne quelques profils de
+lecture typiques : par exemple, deux exercices peuvent obtenir un score EIIA
+élevé, signe d'une architecture globale comparable, tout en présentant un
+score NCST faible, indiquant une divergence dans leur logique de contrôle.
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.35}
+\begin{tabularx}{\textwidth}{c c c X}
+\toprule
+\textcolor{cEIIA}{\textbf{EIIA}} & \textcolor{cTSED}{\textbf{TSED}}
+& \textcolor{cNCST}{\textbf{NCST}} & \textbf{Lecture possible} \\
+\midrule
+élevé & élevé & élevé & Corrections très proches, à la fois en taille, en
+syntaxe et en contrôle. \\
+élevé & faible & élevé & Même squelette et même complexité, mais écritures
+détaillées différentes. \\
+faible & faible & élevé & Même schéma de résolution appliqué à des
+expressions de tailles différentes. \\
+élevé & --- & faible & Complexité comparable mais stratégies de contrôle
+distinctes. \\
+\bottomrule
+\end{tabularx}
+\caption{Exemples de profils de scores et de leur interprétation.}
+\label{tab:lecture_scores}
+\end{table}
+
+Les trois colonnes permettent ainsi d'analyser séparément les dimensions de
+la substituabilité algorithmique avant toute interprétation pédagogique.
+
+% =====================================================================
+\section{Protocole d'évaluation des approches}
+% =====================================================================
+
+L'évaluation se déroule en deux phases, résumées par la
+figure~\ref{fig:protocole}. Les trois scores sont d'abord calculés sur des
+variantes contrôlées, obtenues en appliquant une transformation identifiée à
+une correction de référence. Cette étape permet d'observer séparément la
+sensibilité de chaque mesure à un renommage, à une modification de structure
+de contrôle ou à une transformation de l'organisation du code. Les résultats
+sont ensuite produits sur le corpus complet afin d'étudier la distribution
+des scores et d'identifier les paires candidates pour une analyse
+pédagogique.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.55cm and 0.7cm]
+  % Phase 1
+  \node[donnee, text width=2.4cm] (ref) {Correction\\de référence};
+  \node[etape, text width=3.6cm, right=of ref, align=left,
+        font=\sffamily\scriptsize] (tr)
+       {\textbf{Transformations}\\
+        \textbullet\ renommage\\
+        \textbullet\ structure de contrôle\\
+        \textbullet\ organisation du code};
+  \node[donnee, text width=2.4cm, right=of tr] (var) {Variantes\\contrôlées};
+  \node[etape, text width=2.4cm, right=of var] (p1) {Calcul des\\trois scores};
+  \node[etape, text width=3.0cm, right=of p1] (sens)
+       {Sensibilité de chaque\\mesure à chaque\\transformation};
+
+  % Phase 2
+  \node[donnee, text width=2.4cm, below=2.2cm of ref] (corp) {Corpus\\complet};
+  \node[etape, text width=3.6cm, right=of corp] (p2) {Calcul des\\trois scores};
+  \node[etape, text width=2.4cm, right=of p2] (dist) {Distribution\\des scores};
+  \node[etape, text width=2.4cm, right=of dist] (cand) {Paires\\candidates};
+  \node[etape=cNCST, text width=3.0cm, right=of cand] (val)
+       {Validation\\pédagogique\\par des enseignants};
+
+  \foreach \a/\b in {ref/tr, tr/var, var/p1, p1/sens, corp/p2, p2/dist,
+                     dist/cand, cand/val}{
+    \draw[fleche] (\a) -- (\b);
+  }
+  \draw[fleche, dashed] (sens.south) -- node[left, etiq, align=right, fill=white, inner sep=1pt]
+       {interprétation des divergences} (val.north);
+
+  \begin{scope}[on background layer]
+    \node[cadre=cTSED, fit=(ref)(tr)(var)(p1)(sens)] (ph1) {};
+    \node[cadre=cEIIA, fit=(corp)(p2)(dist)(cand)(val)] (ph2) {};
+  \end{scope}
+  \node[titrecadre=cTSED, anchor=west] at ([xshift=8pt]ph1.north west)
+       {Phase 1 : variantes contrôlées};
+  \node[titrecadre=cEIIA, anchor=west] at ([xshift=8pt]ph2.north west)
+       {Phase 2 : corpus complet};
+\end{tikzpicture}%
+}
+\caption{Protocole d'évaluation en deux phases.}
+\label{fig:protocole}
+\end{figure}
+
+Les mesures ne sont pas interprétées comme une vérité terrain automatique.
+La comparaison porte d'abord sur leur comportement attendu face aux
+variantes, puis sur leur complémentarité. Les cas où les scores divergent
+sont conservés comme des situations informatives : ils permettent
+d'identifier la dimension de la similarité capturée par chaque approche et
+de préparer une validation ultérieure par des enseignants, seuls à même de
+juger si deux exercices sont réellement substituables d'un point de vue
+pédagogique.
+
+
+
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""

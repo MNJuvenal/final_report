@@ -1,0 +1,16 @@
+# Fichiers auxiliaires LaTeX
+*.aux
+*.bbl
+*.bbl-SAVE-ERROR
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+# Le PDF compilé EST versionné (main.pdf) pour être publié
