@@ -5,27 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rapport final</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 4rem auto; padding: 0 16px; line-height: 1.5; color: #222; background: #fafafa; }
-  a.btn { display: inline-block; margin: .4rem .4rem .4rem 0; padding: .7rem 1.2rem; border-radius: 8px; text-decoration: none; font-weight: 600; }
-  .primary { background: #bd1c2b; color: #fff; }
-  .secondary { background: #e5e5e5; color: #222; }
-  ol { padding-left: 1.2rem; }
+  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; background: #f2f2f2; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .6rem 16px; background: #fff; border-bottom: 1px solid #ddd; }
+  h1 { font-size: 1.1rem; margin: 0; }
+  a.btn { padding: .5rem 1rem; border-radius: 6px; background: #bd1c2b; color: #fff; text-decoration: none; font-weight: 600; white-space: nowrap; }
+  iframe { display: block; width: 100%; height: calc(100% - 52px); border: 0; }
 </style>
 </head>
 <body>
-  <h1>Rapport final</h1>
-  <p>Vous pouvez lire le rapport et y laisser des commentaires directement sur le texte.</p>
-  <a class="btn primary" id="annoter" href="#">Lire et commenter</a>
-  <a class="btn secondary" href="rapport.pdf">Télécharger le PDF</a>
-  <h2>Comment commenter</h2>
-  <ol>
-    <li>Cliquez sur « Lire et commenter ».</li>
-    <li>Créez un compte gratuit Hypothesis (ou connectez-vous) dans le panneau de droite.</li>
-    <li>Sélectionnez un passage du texte, puis cliquez sur « Annotate ».</li>
-  </ol>
-  <script>
-    var pdf = new URL("rapport.pdf", location.href).href;
-    document.getElementById("annoter").href = "https://via.hypothes.is/" + pdf;
-  </script>
+  <header>
+    <h1>Rapport final</h1>
+    <a class="btn" href="rapport.pdf" download>Télécharger le PDF</a>
+  </header>
+  <iframe src="rapport.pdf" title="Rapport final"></iframe>
 </body>
 </html>
