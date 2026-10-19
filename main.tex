@@ -247,7 +247,63 @@ exceptions et transferts de contrôle.
 % =====================================================================
 \chapter*{Introduction générale}
 \addcontentsline{toc}{chapter}{Introduction générale}
-\acompleter{2 pages}
+
+L'enseignement de la programmation repose largement sur la pratique : un
+étudiant progresse en résolvant des exercices, en se trompant puis en
+recommençant. Les enseignants s'appuient pour cela sur des environnements
+informatiques pour l'apprentissage humain (EIAH), comme la plateforme
+PLaTon développée à l'Université Gustave Eiffel, qui proposent des banques
+d'exercices corrigés automatiquement. À mesure que ces banques grandissent,
+une question devient centrale : comment retrouver, parmi des centaines
+d'exercices, ceux qui se ressemblent ? Un enseignant voudrait trouver une
+variante d'un exercice pour préparer une évaluation ; un étudiant qui a
+réussi un exercice gagnerait à s'entraîner sur un autre qui mobilise la
+même démarche, sans refaire exactement la même consigne.
+
+C'est dans ce contexte que s'inscrit mon stage, réalisé du 8 juin au
+5 novembre 2026 au sein du laboratoire DICEN-IdF, dans les locaux de
+l'Institut Gaspard Monge, sous l'encadrement de M. Olivier
+\textsc{Champalle}. Le sujet qui m'a été confié porte sur le calcul de
+similarité entre exercices de programmation, en vue de la recommandation
+et de la substitution d'exercices. La notion visée est la
+\emph{substituabilité} : deux exercices sont substituables lorsque, sans
+être identiques, ils mobilisent des connaissances et une démarche de
+résolution suffisamment proches pour être échangés dans un parcours
+d'apprentissage. Cette notion se distingue de la ressemblance des énoncés,
+de la détection de plagiat et de l'équivalence fonctionnelle de deux
+programmes.
+
+Le travail se heurte à une contrainte forte, dite de \emph{démarrage à
+froid} : aucune paire d'exercices n'est annotée selon sa substituabilité et
+aucune trace d'activité d'apprenants n'est disponible. Il n'est donc pas
+possible d'apprendre la similarité à partir d'exemples ; elle doit être
+estimée directement à partir des exercices eux-mêmes. Après des essais
+préliminaires sur le texte des énoncés, j'ai retenu comme source principale
+d'information la correction de référence de chaque exercice, dont le code
+reflète la démarche attendue.
+
+Ma mission comportait trois volets : réaliser un état de l'art sur la
+similarité entre exercices, algorithmes et codes ; concevoir et implémenter
+des mesures de similarité adaptées à ce contexte ; enfin, les valider sur
+des données expérimentales. Elle prolonge les travaux préliminaires d'Adel
+\textsc{Ziani} \cite{ziani_detection_2025}, qui avaient constitué la base
+d'exercices et exploré de premières approches. J'ai abouti à un pipeline
+qui calcule trois mesures complémentaires sur les corrections : l'EIIA, qui
+compare des profils de complexité ; le TSED, une distance d'édition entre
+arbres syntaxiques normalisés ; et le NCST, une représentation de
+l'organisation des structures de contrôle construite au cours du stage. Une
+interface permet de lancer les comparaisons et d'inspecter les
+représentations produites.
+
+Ce rapport est organisé en six chapitres. Le chapitre~1 présente les
+structures d'accueil et le chapitre~2 le projet, l'organisation du stage
+et la démarche suivie. Le chapitre~3 dresse l'état de l'art et justifie
+le positionnement retenu. Le chapitre~4 décrit le pipeline et les trois
+mesures, puis le chapitre~5 présente leur évaluation sur des variantes
+contrôlées et sur un corpus d'exercices réels. Le chapitre~6 discute les
+limites du travail, les difficultés rencontrées et les perspectives, avant
+une conclusion générale. Les annexes rassemblent le code des variantes
+contrôlées et l'ensemble de leurs scores.
 
 \chapter{Présentation des structures d'accueil}
 
@@ -1773,7 +1829,7 @@ l'utilisateur.
   \node[box, draw=eiiacol, below left=0.7cm and -0.6cm of astnorm] (eiia)
       {Profil structurel\\+ distance euclidienne};
   \node[box, draw=tsedcol, below right=0.7cm and -0.6cm of astnorm] (tsed)
-      {Fonction principale\\+ distance d'édition};
+      {Fonction principale ou module\\+ distance d'édition};
   \draw[flow] (conv) -- (astn);
   \draw[flow] (astn) -- (astnorm);
   \draw[flow, eiiacol] (astnorm) -- (eiia);
@@ -2148,17 +2204,27 @@ d'édition. Elle comprend les opérations suivantes :
         \texttt{PARAM\_1}, \texttt{VAR\_1} et \texttt{FUNC\_1} ;
   \item l'abstraction des littéraux, qui remplace les valeurs concrètes par les
         catégories \texttt{NUM}, \texttt{STR}, \texttt{BOOL} et \texttt{NULL} ;
-  \item l'expansion des affectations augmentées, qui réécrit \texttt{a += b}
-        sous la forme canonique \texttt{a = a + b} ;
-  \item l'\emph{inlining} des fonctions auxiliaires simples, limité aux
-        fonctions sûres : un seul \texttt{return} portant une expression
-        unique, sans boucle, condition, appel, exception ni récursion.
+  \item l'\emph{inlining} des fonctions auxiliaires simples. L'appel est
+        remplacé par l'expression renvoyée par la fonction, dans laquelle
+        chaque paramètre est remplacé par l'argument correspondant. Par
+        exemple, avec \texttt{def est\_pair(n): return n \% 2 == 0},
+        l'appel \texttt{if est\_pair(x):} devient \texttt{if x \% 2 == 0:}.
+        Le corps de la fonction n'est donc pas recopié à l'endroit de
+        l'appel : seule son expression de retour est substituée. Cette
+        substitution n'est appliquée qu'aux fonctions définies dans le même
+        fichier et dont le corps se réduit à un unique \texttt{return}
+        portant une expression, sans affectation, boucle, condition, appel,
+        exception ni récursion. Les fonctions prédéfinies du langage, comme
+        \texttt{sum} ou \texttt{len}, et les fonctions importées ne sont
+        jamais remplacées : leur appel reste un nœud \texttt{CALL}.
 \end{itemize}
 
 Les opérateurs, tels que \texttt{+}, \texttt{\%} ou \texttt{==}, ainsi que les
 structures de contrôle sont conservés, car ils portent une information
-importante sur la stratégie de résolution. Les commentaires sont supprimés dès
-la conversion de l'arbre. La figure~\ref{fig:astnorm} illustre l'effet combiné
+importante sur la stratégie de résolution. Les affectations augmentées, comme
+\texttt{a += b}, sont conservées telles quelles : elles ne sont pas confondues
+avec l'affectation explicite \texttt{a = a + b}. Les commentaires sont
+supprimés dès la conversion de l'arbre. La figure~\ref{fig:astnorm} illustre l'effet combiné
 de ces règles sur une instruction.
 
 \begin{figure}[htbp]
@@ -2174,7 +2240,7 @@ de ces règles sur une instruction.
   \node[font=\bfseries] at (0,1.6) {Avant};
   \node[font=\ttfamily\small, align=left] at (0,0.8)
        {\textcolor{red!70!black}{\# cumul}\\total += x * 2};
-  \node[bad] (r1) at (0,-0.4) {AUG\_ASSIGN(+=)}
+  \node[t] (r1) at (0,-0.4) {AUG\_ASSIGN(+=)}
     [sibling distance=2.6cm]
     child {node[bad] {IDENTIFIER(total)}}
     child {node[t] {BINARY\_OP(*)}
@@ -2188,29 +2254,25 @@ de ces règles sur une instruction.
      \texttt{total} $\rightarrow$ \texttt{VAR\_1}\\
      \texttt{x} $\rightarrow$ \texttt{VAR\_2}\\
      \texttt{2} $\rightarrow$ \texttt{NUM}\\
-     \texttt{+=} $\rightarrow$ \texttt{= \dots\ +}\\
      opérateurs conservés};
   \draw[flow, graycol] (2.6,-1.0) -- (rules.west);
   \draw[flow, graycol] (rules.east) -- (6.8,-1.0);
   % Après
   \node[font=\bfseries] at (9.6,1.6) {Après};
-  \node[font=\ttfamily\small] at (9.6,0.8) {VAR\_1 = VAR\_1 + VAR\_2 * NUM};
-  \node[good] at (9.6,-0.4) {ASSIGN}
-    [sibling distance=3.0cm]
+  \node[font=\ttfamily\small] at (9.6,0.8) {VAR\_1 += VAR\_2 * NUM};
+  \node[t] at (9.6,-0.4) {AUG\_ASSIGN(+=)}
+    [sibling distance=2.8cm]
     child {node[good] {IDENTIFIER(VAR\_1)}}
-    child {node[t] {BINARY\_OP(+)}
-      [sibling distance=2.6cm]
-      child {node[good] {IDENTIFIER(VAR\_1)}}
-      child {node[t] {BINARY\_OP(*)}
-        [sibling distance=2.3cm]
-        child {node[good] {IDENTIFIER(VAR\_2)}}
-        child {node[good] {NUMBER(NUM)}}}};
+    child {node[t] {BINARY\_OP(*)}
+      [sibling distance=2.5cm]
+      child {node[good] {IDENTIFIER(VAR\_2)}}
+      child {node[good] {NUMBER(NUM)}}};
 \end{tikzpicture}%
 }
 \caption{Normalisation d'une instruction. Les nœuds en rouge portent des
-détails de surface (noms, valeurs, sucre syntaxique) ; après normalisation, ils
-sont remplacés par des formes canoniques (en vert). Les opérateurs sont
-conservés.}
+détails de surface (noms, valeurs) ; après normalisation, ils sont remplacés
+par des formes canoniques (en vert). Les opérateurs et la forme de
+l'affectation sont conservés.}
 \label{fig:astnorm}
 \end{figure}
 
@@ -2234,8 +2296,16 @@ c_{sub}(u,v) =
 Si $TED(A,B)$ désigne la distance d'édition et $|A|$ et $|B|$ le nombre de
 nœuds des deux arbres, le score est défini par :
 \begin{equation}
-S_{\mathrm{TSED}}(A,B) = 1 - \frac{TED(A,B)}{\max(|A|,|B|)}.
+S_{\mathrm{TSED}}(A,B) = 1 - \frac{TED(A,B)}{|A| + |B|}.
 \end{equation}
+Le dénominateur est la seule borne valable pour toute paire d'arbres :
+supprimer tous les nœuds de $A$ puis insérer tous ceux de $B$ coûte
+$|A| + |B|$. La distance peut en revanche dépasser $\max(|A|,|B|)$, car une
+substitution ne modifie que le label d'un nœud, jamais la forme de l'arbre.
+Lorsque les formes diffèrent, un nœud mal placé ne peut pas être renommé : il
+doit être supprimé puis recréé, soit deux opérations. Par exemple, une chaîne
+de quatre nœuds et un arbre formé d'une racine et de trois feuilles sont à une
+distance de 6. Ce dénominateur garantit un score compris entre 0 et 1.
 
 La figure~\ref{fig:tsed} montre un cas minimal : deux fonctions qui ne
 diffèrent que par un opérateur. Une seule substitution suffit à transformer un
@@ -2260,18 +2330,22 @@ arbre en l'autre.
       child {node[t] {IDENTIFIER(PARAM\_2)}}};
   \draw[flow, red!70!black, dashed] (opA) -- node[above, font=\scriptsize]{substitution, coût 1} (opB);
   \node[draw=tsedcol, rounded corners, fill=tsedcol!5, inner sep=5pt] at (4.25,-3.2)
-     {$TED = 1,\quad |A| = |B| = 4 \quad\Rightarrow\quad S_{\mathrm{TSED}} = 1 - \frac{1}{4} = 0{,}75$};
+     {$TED = 1,\quad |A| = |B| = 4 \quad\Rightarrow\quad S_{\mathrm{TSED}} = 1 - \frac{1}{4 + 4} = 0{,}875$};
 \end{tikzpicture}
 \caption{Exemple de calcul TSED sur deux AST normalisés de quatre nœuds.}
 \label{fig:tsed}
 \end{figure}
 
-Dans le cas de programmes modulaires, le système sélectionne, pour le calcul du
-TSED, la fonction dont l'AST contient le plus de nœuds (la première en cas
-d'égalité) afin de comparer en priorité la fonction centrale de la correction.
-L'EIIA et le NCST restent calculés sur la représentation prévue par leur
-propre pipeline ; cette sélection ne doit donc pas être interprétée comme une
-réduction commune des trois mesures.
+Pour comparer des arbres de même niveau, le système choisit, pour chaque
+paire, l'arbre comparé selon la présence de fonctions. Si les deux fichiers
+contiennent des fonctions, la comparaison porte sur leur fonction
+principale, celle dont l'AST contient le plus de nœuds (la première en cas
+d'égalité), afin de comparer en priorité la fonction centrale de la
+correction. Si au moins l'un des deux fichiers n'en contient aucune, comme un
+script écrit au niveau du module, la comparaison porte sur le module complet
+des deux fichiers : une fonction n'est ainsi jamais confrontée à un module
+entier. L'EIIA est calculé sur le même arbre ; le NCST porte toujours sur le
+fichier entier.
 
 % =====================================================================
 \section{Arbre structurel normalisé (NCST)}
@@ -2923,7 +2997,7 @@ Onglet & Contenu affiché \\
 Code & Code Python source du fichier \\
 CST & Arbre syntaxique concret Tree-sitter (\texttt{cache/tree\_sitter/*.cst.txt}) \\
 AST & AST simplifié (\texttt{cache/ast/*.ast.txt}) \\
-AST normalisé & AST après anonymisation, abstraction des littéraux, expansion et
+AST normalisé & AST après anonymisation, abstraction des littéraux et
   \emph{inlining} (\texttt{cache/normalized\_ast/*.normalized.txt}) \\
 NCST & Deux sous-onglets : \og NCST brut \fg{} et \og NCST normalisé \fg{}, rendus
   textuellement par \texttt{render\_text} \\
@@ -3198,18 +3272,18 @@ scores observés.
 Contrôles  & 11 Copie exacte                  & 1,000 & 1,000 & 1,000 \\
            & 7 Condition \texttt{== 1}        & 1,000 & 1,000 & 1,000 \\
 \midrule
-Invariance & 13 Instructions inversées        & 0,900 & 1,000 & 1,000 \\
-           & 6 Opérateurs équivalents         & 0,902 & 0,979 & 1,000 \\
+Invariance & 13 Instructions inversées        & 0,944 & 1,000 & 1,000 \\
+           & 6 Opérateurs équivalents         & 0,896 & 0,875 & 1,000 \\
 \midrule
-Même       & 4 Condition inversée             & 0,854 & 0,952 & 0,815 \\
-stratégie  & 9 \texttt{while} avec index      & 0,617 & 0,671 & 0,897 \\
-           & 12 Sortie ajoutée                & 0,561 & 0,710 & 0,929 \\
-           & 5 Code mort                      & 0,493 & \textbf{0,541} & 0,765 \\
-           & 8 Fonctions auxiliaires          & 0,425 & 0,924 & 0,774 \\
+Même       & 4 Condition inversée             & 0,918 & 0,966 & 0,815 \\
+stratégie  & 9 \texttt{while} avec index      & 0,767 & 0,671 & 0,897 \\
+           & 12 Sortie ajoutée                & 0,742 & 0,687 & 0,929 \\
+           & 5 Code mort                      & 0,645 & \textbf{0,514} & 0,765 \\
+           & 8 Fonctions auxiliaires          & 0,693 & 0,902 & 0,774 \\
 \midrule
-Stratégie  & 3 Récursion                      & 0,333 & 0,827 & 0,560 \\
-différente & 2 Compréhension                  & 0,175 & 0,711 & 0,600 \\
-           & 10 Témoin négatif                & \textbf{0,075} & \textbf{0,853} & 0,500 \\
+Stratégie  & 3 Récursion                      & 0,631 & 0,746 & 0,560 \\
+différente & 2 Compréhension                  & 0,538 & 0,785 & 0,600 \\
+           & 10 Témoin négatif                & \textbf{0,535} & \textbf{0,871} & 0,500 \\
 \bottomrule
 \end{tabular}
 \caption{Scores obtenus entre la correction de référence \texttt{01\_base.py}
@@ -3245,25 +3319,27 @@ qu'une stratégie différente produise un score faible : deux programmes de
 taille comparable peuvent avoir des profils proches.
 
 \paragraph{Observés.}
-Les invariances sont respectées : la variante 13 obtient 1 et la variante 6
-obtient 0,979, la légère baisse provenant du nœud supplémentaire introduit par
-les parenthèses. Le comportement sur les autres variantes confirme toutefois
-que l'EIIA mesure un volume plutôt qu'une organisation.
+La variante 13 obtient 1, ce qui confirme l'invariance à la permutation. La
+variante 6 descend en revanche à 0,875 : les deux affectations écrites
+explicitement exposent chacune un opérateur \texttt{+} et un opérande de plus
+que la forme \texttt{+=}, auxquels s'ajoute le nœud des parenthèses. Le
+comportement sur les autres variantes confirme que l'EIIA mesure un volume
+plutôt qu'une organisation.
 \begin{itemize}
-  \item Le score le plus faible (0,541) est attribué au code mort, alors que
+  \item Le score le plus faible (0,514) est attribué au code mort, alors que
         cette variante ne modifie en rien la stratégie de résolution. Les
         instructions inutiles augmentent fortement le nombre de nœuds,
         d'affectations, d'appels et d'itérations.
-  \item Le témoin négatif \texttt{reduce} obtient 0,853, soit davantage que la
+  \item Le témoin négatif \texttt{reduce} obtient 0,871, soit davantage que la
         boucle \texttt{while} (0,671) qui suit pourtant la même démarche que
         la référence. Le programme est court, mais l'expression de la
         \texttt{lambda} contient une condition, des opérateurs et des appels
         dont les effectifs restent proches de ceux de la référence.
-  \item Les fonctions auxiliaires (0,924) et la récursion (0,827) restent
+  \item Les fonctions auxiliaires (0,902) et la récursion (0,746) restent
         également élevées : déplacer le code dans des fonctions ou remplacer
         la boucle par des appels récursifs modifie peu le volume global.
 \end{itemize}
-Sur les douze variantes, l'EIIA ne descend pas sous 0,54 et ne sépare pas les
+Sur les douze variantes, l'EIIA ne descend pas sous 0,51 et ne sépare pas les
 stratégies différentes des réécritures de même stratégie. Il doit donc être
 interprété comme un indicateur de taille et de complexité comparables, utile
 pour écarter des paires de dimensions très différentes, et non comme une
@@ -3283,38 +3359,45 @@ baisser davantage, et les stratégies différentes doivent obtenir les scores
 les plus faibles.
 
 \paragraph{Observés.}
-Le TSED présente la plage de valeurs la plus étendue, de 0,075 à 1. Les deux
-contrôles obtiennent 1 et les trois stratégies différentes occupent le bas
-du classement, le témoin négatif obtenant le score le plus faible (0,075).
-C'est la seule mesure qui ordonne correctement les deux extrêmes.
+Les deux contrôles obtiennent 1 et les trois stratégies différentes occupent
+le bas du classement, le témoin négatif obtenant le score le plus faible
+(0,535). Les scores s'étendent de 0,535 à 1, et les trois stratégies
+différentes obtiennent entre 0,535 et 0,631 : la distance étant rapportée à
+$|A| + |B|$, les scores restent éloignés de 0 même pour des programmes sans
+démarche commune. Comme pour le NCST, les valeurs doivent donc être lues de
+manière relative.
 
-Les deux variantes d'invariance perdent chacune quatre éditions :
+Les deux variantes d'invariance perdent plusieurs éditions :
 \begin{itemize}
-  \item Pour la variante 13 ($1 - 4/40 = 0{,}900$), la permutation interagit
+  \item Pour la variante 13 ($1 - 4/72 \approx 0{,}944$), la permutation interagit
         avec l'anonymisation canonique. Les variables étant renommées dans
         leur ordre d'apparition, \texttt{nb} devient \texttt{VAR\_1} au lieu
         de \texttt{VAR\_2}. Les deux mises à jour de la boucle et les deux
         éléments du \texttt{return} diffèrent alors chacun d'un label, soit
         quatre substitutions. Une simple permutation se traduit donc par des
         changements de noms canoniques.
-  \item Pour la variante 6 ($1 - 4/41 \approx 0{,}902$), le remplacement de
-        \texttt{\%} par \texttt{\&} et le nœud des parenthèses expliquent deux
-        éditions. \averifier{origine des deux éditions restantes, par exemple
-        une différence entre l'expansion de \texttt{+=} et la forme écrite
-        explicitement}
+  \item Pour la variante 6 ($1 - 8/77 \approx 0{,}896$), le remplacement de
+        \texttt{\%} par \texttt{\&} et le nœud des parenthèses expliquent
+        deux éditions. Les six autres viennent des deux mises à jour écrites
+        \texttt{total = total + x} et \texttt{nb = nb + 1} : chacune
+        substitue \texttt{AUG\_ASSIGN(+=)} par \texttt{ASSIGN} et insère un
+        \texttt{BINARY\_OP(+)} ainsi que la variable répétée, soit trois
+        éditions par instruction.
 \end{itemize}
 
 Le TSED se montre en revanche sévère envers les réécritures qui conservent la
-démarche. La boucle \texttt{while} (0,617), la sortie ajoutée (0,561) et le
-code mort (0,493) perdent entre 40 et 50~\% de similarité. Les fonctions
-auxiliaires obtiennent 0,425, un score proche de celui de la récursion
-(0,333). Pour cette variante, seule la fonction contenant le plus de nœuds
-(\texttt{stats\_pairs}) est comparée, et la fonction \texttt{est\_pair} n'est
-pas \emph{inlinée} : l'affectation intermédiaire \texttt{n0 = n} la rend
-non éligible aux règles du chapitre précédent. \averifier{inlining effectif de
-\texttt{accumuler}} Le TSED distingue donc très bien les programmes très
-différents, mais il confond en partie une réorganisation du code avec un
-changement de stratégie.
+démarche. La boucle \texttt{while} (0,767), la sortie ajoutée (0,742) et le
+code mort (0,645) perdent entre 23 et 36~\% de similarité, et les
+fonctions auxiliaires obtiennent 0,693. Pour cette variante, seule la fonction
+contenant le plus de nœuds (\texttt{stats\_pairs}) est comparée, et la
+fonction \texttt{est\_pair} n'est pas \emph{inlinée} : l'affectation
+intermédiaire \texttt{n0 = n} la rend non éligible aux règles du chapitre
+précédent. La fonction \texttt{accumuler}, réduite à un seul \texttt{return},
+est en revanche \emph{inlinée}. Le plus faible score des réécritures de même
+stratégie (code mort, 0,645) ne dépasse que de 0,014 le plus élevé des
+stratégies différentes (récursion, 0,631). Le TSED ordonne donc correctement
+les deux groupes, mais il confond en partie une réorganisation du code avec
+un changement de stratégie.
 
 % ---------------------------------------------------------------------
 \subsection{NCST : attendus et observés}
@@ -3382,12 +3465,16 @@ similarité de moitié.
 
 Les trois mesures respectent les invariances qui découlent de leurs règles de
 normalisation, et aucune ne distingue un changement de valeur à l'intérieur
-d'un test (variante 7). Elles diffèrent en revanche nettement sur les
+d'un test (variante 7). La variante 6 n'est une invariance que pour le NCST,
+qui ignore les expressions : le TSED et l'EIIA distinguent volontairement une
+affectation augmentée (\texttt{total += x}) de sa forme explicite
+(\texttt{total = total + x}), ce qui explique leurs scores de 0,896 et
+0,875. Elles diffèrent en revanche nettement sur les
 réécritures :
 \begin{itemize}
-  \item le \textcolor{tsedcol}{\textbf{TSED}} est le plus discriminant et
-        classe correctement les stratégies différentes, mais il pénalise
-        fortement les réécritures de même stratégie ;
+  \item le \textcolor{tsedcol}{\textbf{TSED}} place les stratégies
+        différentes sous les réécritures de même stratégie, mais avec une
+        marge très faible, et il pénalise fortement les réécritures ;
   \item le \textcolor{ncstcol}{\textbf{NCST}} est le plus robuste à ces
         réécritures, mais il est sensible aux changements de niveau et
         présente un plancher proche de 0,5 ;
@@ -3402,7 +3489,69 @@ possibles de la normalisation, comme la suppression du code mort, discutées
 dans le chapitre consacré aux limites et aux perspectives.
 
 \subsection{Fusion des trois approches}
-\acompleter{scores pondérés sur les variantes}
+\label{sec:fusion_variantes}
+
+L'interface Streamlit permet de combiner les trois mesures par une moyenne
+pondérée. En l'absence de vérité terrain, aucun jeu de poids ne peut être
+ajusté : la fusion est donc étudiée ici avec des poids égaux, qui
+correspondent au réglage par défaut de l'interface. Le
+tableau~\ref{tab:fusion_variantes} donne le score obtenu pour chaque
+variante, ainsi que celui d'une combinaison limitée au TSED et au NCST, qui
+écarte l'EIIA.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{llcc}
+\toprule
+\textbf{Catégorie} & \textbf{Variante} &
+\textbf{Moyenne des trois} & \textbf{Moyenne TSED + NCST} \\
+\midrule
+Contrôles  & 11 Copie exacte & 1,000 & 1,000 \\
+           & 7 Condition \texttt{== 1} & 1,000 & 1,000 \\
+\midrule
+Invariance & 13 Instructions inversées & 0,981 & 0,972 \\
+           & 6 Opérateurs équivalents & 0,924 & 0,948 \\
+\midrule
+Même       & 4 Condition inversée & 0,900 & 0,866 \\
+stratégie  & 9 \texttt{while} avec index & 0,778 & 0,832 \\
+           & 12 Sortie ajoutée & 0,786 & 0,835 \\
+           & 5 Code mort & 0,641 & 0,705 \\
+           & 8 Fonctions auxiliaires & 0,790 & 0,734 \\
+\midrule
+Stratégie  & 3 Récursion & 0,646 & 0,595 \\
+différente & 2 Compréhension & 0,641 & 0,569 \\
+           & 10 Témoin négatif & 0,635 & 0,518 \\
+\bottomrule
+\end{tabular}
+\caption{Scores pondérés à poids égaux entre la correction de référence et
+chacune de ses variantes.}
+\label{tab:fusion_variantes}
+\end{table}
+
+Avec les trois mesures, les contrôles obtiennent 1, les invariances
+dépassent 0,92, les réécritures de même stratégie se situent entre 0,641 et
+0,900, et les stratégies différentes entre 0,635 et 0,646. Les deux groupes
+se chevauchent : la récursion (0,646) dépasse le code mort (0,641), et la
+compréhension lui est égale au millième près. L'EIIA en est la cause : il
+attribue des scores élevés aux stratégies différentes (0,746 à 0,871) et son
+plus faible score au code mort (0,514), ce qui suffit à inverser l'ordre des
+deux groupes.
+
+Sans l'EIIA, l'écart entre le score le plus faible des réécritures de même
+stratégie (code mort, 0,705) et le plus élevé des stratégies différentes
+(récursion, 0,595) atteint 0,110. Les deux mesures se compensent : le NCST
+relève les réécritures que le TSED pénalise. Cet écart reste néanmoins inférieur à celui du NCST seul,
+dont le score le plus faible pour une même stratégie (code mort, 0,765)
+dépasse de 0,165 le plus élevé des stratégies différentes (compréhension,
+0,600).
+
+Aucune combinaison ne corrige la variante 7, qui obtient 1 avec chacune des
+mesures. Ces résultats portent sur douze paires construites autour d'un seul
+exercice : ils montrent l'intérêt d'une combinaison incluant le TSED et le
+NCST, mais ne suffisent pas à fixer des poids. Ceux-ci devront être
+déterminés à partir des jugements des enseignants sur le corpus complet.
 
 
 
@@ -3415,14 +3564,318 @@ dans le chapitre consacré aux limites et aux perspectives.
 
 %"""""""""""""""""""""""""""""""""""""""""""""""""""
 \section{Résultats sur le corpus complet}
+\label{sec:res_corpus}
 
+\subsection{Sous-corpus analysé}
+
+Le test sur le corpus général s'est limité aux 99 corrections issues de
+GitHub, soit 4\,851 paires, au lieu des 906 corrections et 409\,965 paires du
+corpus de départ (tableau~\ref{tab:corpus}). Les balises Markdown qui
+encadraient ces corrections ont été retirées. Ces fichiers sont courts : 597 lignes non vides au total, 6,03 lignes en moyenne
+et 22 au maximum. Seuls 37 d'entre eux définissent au moins une fonction ;
+les 62 autres sont des scripts écrits au niveau du module, pour lesquels le
+TSED et l'EIIA comparent le module complet. Les 4\,851 paires ont toutes
+été traitées sans erreur. Un fichier ne contient que des
+commentaires : son AST se réduit à la racine \texttt{MODULE}, et il
+intervient dans 97 des 192 paires dont le TSED est inférieur à 0,2.
+
+\subsection{Distribution des scores}
+
+Le tableau~\ref{tab:distrib_corpus} et la figure~\ref{fig:distrib_corpus}
+résument la distribution des trois scores.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lccccccccc}
+\toprule
+\textbf{Mesure} & \textbf{Min} & \textbf{Q1} & \textbf{Médiane} &
+\textbf{Moyenne} & \textbf{Q3} & \textbf{Max} & \textbf{Écart-type} &
+$\boldsymbol{\geq 0{,}9}$ & $\boldsymbol{= 1}$ \\
+\midrule
+\textcolor{tsedcol}{\textbf{TSED}} & 0,017 & 0,359 & 0,441 & 0,435 & 0,507 & 1 & 0,135 & 31 & 8 \\
+\textcolor{eiiacol}{\textbf{EIIA}} & 0,008 & 0,379 & 0,558 & 0,549 & 0,746 & 1 & 0,225 & 139 & 8 \\
+\textcolor{ncstcol}{\textbf{NCST}} & 0,069 & 0,375 & 0,500 & 0,520 & 0,636 & 1 & 0,191 & 231 & 101 \\
+\bottomrule
+\end{tabular}
+\caption{Distribution des scores sur les 4\,851 paires du sous-corpus GitHub.
+Les deux dernières colonnes donnent un nombre de paires.}
+\label{tab:distrib_corpus}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+\pgfplotsset{
+  histo/.style={
+    width=5.6cm, height=4.6cm,
+    ybar, bar width=0.075,
+    xmin=0, xmax=1, ymin=0, ymax=1900,
+    xtick={0,0.5,1}, xticklabels={0,{0,5},1},
+    ytick={0,500,1000,1500},
+    yticklabel style={/pgf/number format/.cd, 1000 sep={\,}},
+    tick label style={font=\scriptsize},
+    title style={font=\small\bfseries},
+    axis x line*=bottom, axis y line*=left,
+    ymajorgrids, grid style={gray!20},
+    enlarge x limits=0.02,
+  }
+}
+\begin{axis}[histo, name=t, title={\textcolor{tsedcol}{TSED}},
+             ylabel={Nombre de paires}, ylabel style={font=\scriptsize}]
+\addplot[draw=none, fill=tsedcol!75] coordinates
+  {(0.05,87) (0.15,105) (0.25,450) (0.35,1074) (0.45,1782) (0.55,972)
+   (0.65,228) (0.75,82) (0.85,40) (0.95,31)};
+\end{axis}
+\begin{axis}[histo, name=e, at={(t.east)}, anchor=west, xshift=0.6cm,
+             title={\textcolor{eiiacol}{EIIA}}, yticklabels={}]
+\addplot[draw=none, fill=eiiacol!75] coordinates
+  {(0.05,123) (0.15,199) (0.25,447) (0.35,583) (0.45,665) (0.55,721)
+   (0.65,614) (0.75,707) (0.85,653) (0.95,139)};
+\end{axis}
+\begin{axis}[histo, at={(e.east)}, anchor=west, xshift=0.6cm,
+             title={\textcolor{ncstcol}{NCST}}, yticklabels={}]
+\addplot[draw=none, fill=ncstcol!75] coordinates
+  {(0.05,7) (0.15,89) (0.25,340) (0.35,904) (0.45,1073) (0.55,998)
+   (0.65,474) (0.75,385) (0.85,350) (0.95,231)};
+\end{axis}
+\end{tikzpicture}
+\caption{Répartition des scores par intervalles de 0,1 sur le sous-corpus
+GitHub (4\,851 paires).}
+\label{fig:distrib_corpus}
+\end{figure}
+
+Les trois mesures se distribuent de manière très différente.
+\begin{itemize}
+  \item Le \textcolor{tsedcol}{\textbf{TSED}} est concentré : 79~\% des
+        paires se situent entre 0,3 et 0,6, et la moitié centrale tient dans
+        un intervalle de 0,15. Seules 71 paires dépassent 0,8.
+  \item L'\textcolor{eiiacol}{\textbf{EIIA}} est la mesure la plus étalée
+        (écart-type de 0,225) : ses valeurs couvrent presque uniformément
+        l'intervalle de 0,3 à 0,9, et 792 paires dépassent 0,8.
+  \item Le \textcolor{ncstcol}{\textbf{NCST}} prend un petit nombre de valeurs
+        distinctes : 0,5, 0,4 et 0,667 regroupent à eux seuls 724 paires. Il attribue un score de 1 à
+        101 paires, dont 78 entre deux scripts. Un script court, composé
+        d'instructions simples, se réduit à une séquence de nœuds
+        \texttt{STATEMENT}, que le NCST ne distingue pas d'une autre séquence
+        de même longueur.
+\end{itemize}
+
+\subsection{Accord entre les mesures}
+
+Le tableau~\ref{tab:spearman_corpus} donne la corrélation de rang de Spearman
+entre les trois scores, calculée sur l'ensemble des paires.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lccc}
+\toprule
+ & \textcolor{tsedcol}{\textbf{TSED}} & \textcolor{eiiacol}{\textbf{EIIA}} &
+ \textcolor{ncstcol}{\textbf{NCST}} \\
+\midrule
+\textcolor{tsedcol}{\textbf{TSED}} & 1 & 0,763 & 0,364 \\
+\textcolor{eiiacol}{\textbf{EIIA}} & 0,763 & 1 & 0,212 \\
+\textcolor{ncstcol}{\textbf{NCST}} & 0,364 & 0,212 & 1 \\
+\bottomrule
+\end{tabular}
+\caption{Corrélation de rang de Spearman entre les trois scores
+(4\,851 paires).}
+\label{tab:spearman_corpus}
+\end{table}
+
+Le TSED et l'EIIA classent les paires de façon proche (0,763). Les deux
+mesures sont calculées sur le même AST normalisé, et toutes deux font
+intervenir la taille des arbres : l'EIIA par la composante du nombre de
+nœuds, le TSED par son dénominateur $|A| + |B|$. Le NCST, qui ignore les
+expressions et ne retient que l'organisation en blocs, est en revanche
+faiblement corrélé aux deux autres (0,364 et 0,212).
+
+L'écart entre les mesures dépend aussi de la nature des fichiers comparés
+(tableau~\ref{tab:types_corpus}).
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Type de paire} & \textbf{Paires} &
+\textcolor{tsedcol}{\textbf{TSED}} & \textcolor{eiiacol}{\textbf{EIIA}} &
+\textcolor{ncstcol}{\textbf{NCST}} \\
+\midrule
+Fonctions / fonctions & 666   & 0,486 & 0,533 & 0,570 \\
+Fonctions / script    & 2\,294 & 0,418 & 0,565 & 0,417 \\
+Script / script       & 1\,891 & 0,437 & 0,536 & 0,628 \\
+\bottomrule
+\end{tabular}
+\caption{Score moyen selon la présence de fonctions dans les deux fichiers.}
+\label{tab:types_corpus}
+\end{table}
+
+Le NCST est le plus sensible à cette distinction : sa moyenne passe de 0,628
+entre deux scripts à 0,417 entre un script et un programme organisé en
+fonctions : les nœuds \texttt{FUNCTION} de ce dernier n'ont pas de
+correspondant dans un script. L'EIIA reste stable d'un type de paire à
+l'autre (de 0,533 à 0,565).
+
+\subsection{Paires candidates}
+
+Vingt-quatre paires obtiennent au moins 0,9 sur les trois mesures, dont six
+un score de 1 partout. Elles relient presque toujours des fichiers de numéros
+voisins : parmi les 31 paires dont le TSED atteint 0,9, 18 associent deux
+corrections consécutives. Dans les cas examinés, ces corrections
+consécutives traitent des variantes d'un même problème.
+
+Ces paires correspondent au cas recherché. Les corrections 13 et 14, par
+exemple, ne calculent pas la même chose (la première compte les chiffres et
+les lettres d'une chaîne, la seconde les majuscules et les minuscules) mais
+suivent exactement la même démarche : un dictionnaire de compteurs, un parcours de
+la chaîne, une sélection à deux branches et deux affichages. Les trois mesures
+valent 1. La série 37 à 41 présente le même phénomène : construire la liste
+des carrés de 1 à 20, puis l'afficher en entier, n'en afficher que les cinq
+premiers ou les cinq derniers éléments, tous sauf les cinq premiers, ou sa
+conversion en tuple. Ces paires sont des candidates naturelles
+à la substitution, à confirmer par un enseignant.
+
+\subsection{Divergences entre les mesures}
+
+Les paires pour lesquelles les mesures divergent illustrent la dimension
+capturée par chacune.
+
+\paragraph{NCST élevé, TSED faible.}
+Vingt-trois paires obtiennent un NCST de 1 avec un TSED inférieur à 0,6. Les
+corrections 10 et 88 (TSED 0,461, NCST 1) sont deux scripts de trois
+instructions dont l'une est une compréhension : l'un trie les mots distincts
+d'une phrase, l'autre filtre les multiples de 5 et de 7. Le NCST ne voit que
+la même séquence d'instructions, alors que les tâches n'ont rien en commun.
+
+\paragraph{EIIA élevé, TSED faible.}
+Trente-trois paires obtiennent un EIIA d'au moins 0,9 avec un TSED inférieur à
+0,5. Les corrections 5 et 13 (TSED 0,453, EIIA 0,925, NCST 0,322) en
+donnent un exemple : la première définit une classe à trois méthodes qui lit
+une chaîne et l'affiche en majuscules, la seconde compte les chiffres et les
+lettres d'une chaîne par un parcours et une sélection. Les deux programmes
+contiennent un nombre voisin de nœuds, d'affectations et d'appels, ce qui
+suffit à rapprocher leurs profils alors que leurs démarches n'ont rien en
+commun.
+
+\paragraph{TSED élevé, NCST faible.}
+Sept paires obtiennent un TSED d'au moins 0,8 avec un NCST inférieur à 0,7.
+Pour les corrections 26 et 95 (TSED 0,765, NCST 0,296), le TSED ne compare
+que les fonctions principales : une fonction qui renvoie une somme d'une
+part, une méthode qui renvoie une chaîne d'autre part. Le NCST, qui porte
+sur le fichier entier, voit en revanche les trois classes et l'héritage de
+la correction 95.
+
+\paragraph{Code hors fonction.}
+Inversement, les corrections 66 et 67 obtiennent 1 au TSED et à l'EIIA, mais
+0,929 au NCST. Elles partagent la même fonction de Fibonacci récursive et ne
+diffèrent que par le code placé après elle : la première affiche un terme, la
+seconde construit la liste des termes par une compréhension. Seul le NCST, qui
+lit le fichier entier, perçoit cette différence.
+
+Ces divergences confirment, sur des programmes réels, les comportements
+observés sur les variantes contrôlées. Elles relèvent pour partie du choix de
+l'arbre comparé par le TSED et l'EIIA, discuté dans le chapitre consacré
+aux limites.
+
+% =====================================================================
 \section{Synthèse comparative}
+% =====================================================================
+
+Le tableau~\ref{tab:synthese_resultats} rassemble les observations des deux
+phases d'évaluation.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{>{\bfseries\raggedright\arraybackslash}p{2.7cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X}
+\toprule
+ & \textcolor{tsedcol}{TSED} & \textcolor{eiiacol}{EIIA} &
+ \textcolor{ncstcol}{NCST} \\
+\midrule
+Variantes contrôlées &
+  Sépare les deux groupes avec une marge de 0,014 ; pénalise les
+  réécritures de même stratégie &
+  Ne sépare pas les groupes ; score le plus faible attribué au code mort &
+  Sépare les deux groupes avec une marge de 0,165 ; sensible aux
+  changements de niveau \\
+Corpus GitHub &
+  Distribution resserrée autour de 0,45 ; peu de paires au-dessus de 0,8 &
+  Distribution étalée ; 792 paires au-dessus de 0,8 &
+  Peu de valeurs distinctes ; 101 paires à 1, surtout entre scripts \\
+Stratégies différentes face à la référence & 0,535 à 0,631 & 0,746 à 0,871 &
+  0,500 à 0,600 \\
+Principale faiblesse &
+  Ne compare qu'une partie du programme lorsque les deux fichiers ont des
+  fonctions &
+  Mesure un volume, non une démarche &
+  Ne distingue pas deux scripts sans structure de contrôle ayant le même
+  nombre d'instructions \\
+Usage recommandé &
+  Départage les programmes que le NCST confond &
+  Filtre de taille et de complexité &
+  Mesure principale de proximité de démarche \\
+\bottomrule
+\end{tabularx}
+\caption{Synthèse du comportement des trois mesures sur les deux phases
+d'évaluation.}
+\label{tab:synthese_resultats}
+\end{table}
+
+Les deux phases ne conduisent pas au même classement des mesures. Sur les
+variantes contrôlées, le NCST est le plus fiable : il sépare les réécritures
+de même stratégie des stratégies différentes avec l'écart le plus large
+(0,165), là où le TSED ne dispose que d'une marge de 0,014. Sur le corpus
+GitHub, ce même NCST montre sa limite : les programmes y sont si courts que
+beaucoup se réduisent à une séquence d'instructions simples, et le NCST
+attribue un score de 1 à des corrections dont les tâches n'ont rien en
+commun. Le TSED, qui conserve les expressions, leur attribue des scores
+nettement inférieurs à 1 (0,461 et 0,662 pour les deux exemples cités).
+L'EIIA, fortement corrélé au TSED sur le corpus et incapable de séparer les
+stratégies sur les variantes, apporte peu d'information propre : il
+rapproche des programmes de taille comparable, quelle que soit leur
+démarche.
+
+Aucune mesure ne suffit donc seule, et la combinaison du TSED et du NCST est
+la plus prometteuse. Sur les variantes contrôlées, elle conserve un écart de
+0,110 entre les deux groupes, alors que la moyenne des trois mesures les
+fait se chevaucher. Sur le corpus, les deux mesures sont faiblement
+corrélées (0,364) : elles ne classent pas les paires de la même façon.
+L'EIIA peut être conservé comme filtre préalable, pour écarter
+les paires de tailles très différentes.
+
+Deux réserves s'appliquent à ces conclusions. Les scores du TSED et du NCST
+restent éloignés de 0 même entre programmes sans démarche commune : ils
+doivent être lus de manière relative, en classant les paires plutôt qu'en
+appliquant un seuil absolu. Par ailleurs, aucune vérité terrain n'est disponible : les poids de la
+combinaison et le seuil au-delà duquel deux exercices sont jugés
+substituables devront être fixés à partir du jugement des enseignants sur
+les paires candidates.
+
 
 
 %potentielement a enlever car ca se repete un peu avec le point juste avant (5.4 vs 6.1 )
 \chapter{Discussion sur les limites et perspectives}
 \section{Discussion des résultats}
 \section{Limites techniques des méthodes}
+
+\paragraph{TSED : échelle du score et choix de l'arbre comparé.}
+Rapporter la distance à $|A| + |B|$ garantit un score compris entre 0 et 1,
+mais resserre l'échelle : deux arbres de même taille sans aucun label commun
+obtiennent au plus 0,5, et tout score est supérieur à celui que donnerait
+$\max(|A|,|B|)$. Un score de 0,5 peut donc correspondre à deux arbres sans
+aucun nœud commun, et non à une similarité de moitié. Par ailleurs, lorsque les deux fichiers contiennent des fonctions,
+seule la fonction principale est comparée : le code placé hors de toute
+fonction, comme la lecture des entrées et l'affichage du résultat, est
+ignoré. Lorsque l'un des fichiers n'en contient aucune, les modules complets
+sont comparés, avec toutes leurs fonctions. Le périmètre comparé dépend donc
+de la paire, et deux scores obtenus selon des règles différentes ne sont pas
+strictement comparables.
 
 \paragraph{NCST : compréhensions et fonctions anonymes.}
 Les nœuds \texttt{COMPREHENSION} et \texttt{LAMBDA} ne sont que des
@@ -3467,19 +3920,575 @@ artificielle, mais elle a trois contreparties.
         donc être revue à chaque changement de version de l'analyseur ou
         lors du passage à un autre langage.
 \end{itemize}
+
+\paragraph{Normalisation de l'AST : portée de l'\emph{inlining}.}
+L'\emph{inlining} retenu substitue l'expression de retour à l'appel ; il ne
+s'applique donc qu'aux fonctions réduites à un seul \texttt{return}. Une
+simple variable intermédiaire suffit à le mettre en échec : dans la
+variante~8, l'affectation \texttt{n0 = n} placée avant le \texttt{return}
+rend \texttt{est\_pair} non éligible, alors que la fonction calcule
+exactement la même expression.
+
+Recopier le corps complet de la fonction à l'endroit de l'appel ne
+résoudrait pas ce problème de manière satisfaisante. L'appel se trouve le
+plus souvent au sein d'une expression, comme la condition d'un \texttt{if},
+où des instructions ne peuvent pas être insérées. Le corps devrait alors
+être placé avant l'instruction qui contient l'appel, avec une variable
+temporaire pour le résultat. Cela ajoute des nœuds absents de la version
+écrite sans fonction auxiliaire, et fait donc baisser le TSED au lieu de le
+rapprocher de cette version. Ce déplacement peut en outre modifier le
+comportement du programme : un appel placé dans la condition d'une boucle
+\texttt{while} doit être réévalué à chaque tour, et un appel situé dans une
+expression booléenne évaluée de façon paresseuse, comme
+\texttt{a and est\_pair(x)}, n'est pas toujours exécuté. Enfin, une
+fonction comportant plusieurs \texttt{return} imposerait de restructurer le
+flot de contrôle de l'appelant.
+
+Une amélioration consisterait à accepter, avant le \texttt{return}, une
+suite d'affectations simples, sans boucle ni condition, dont chaque
+variable n'est affectée qu'une fois. Ces affectations seraient substituées
+successivement dans l'expression de retour : \texttt{n0 = n} suivi de
+\texttt{return n0 \% 2 == 0} se réduirait à \texttt{return n \% 2 == 0}, et
+l'appel serait ensuite remplacé comme dans le cas actuel. On élargirait
+ainsi les fonctions traitées sans perdre la garantie de préserver le
+comportement du programme.
+
+\paragraph{Fonctions prédéfinies et importées.}
+L'appel à une fonction prédéfinie (\texttt{sum}, \texttt{len}) ou importée
+(\texttt{functools.reduce}) n'est jamais remplacé par son code, qui n'est pas
+disponible dans le fichier analysé. Une compréhension suivie de
+\texttt{sum} réalise pourtant la même accumulation qu'une boucle, mais le
+TSED ne voit qu'un appel (0,538 pour la variante 2) et le NCST ne le voit pas
+du tout, puisqu'il supprime les expressions. Par ailleurs, les noms des
+fonctions prédéfinies sont conservés lors de l'anonymisation, alors que ceux
+des fonctions importées sont remplacés par un identifiant \texttt{VAR\_k} :
+deux appels à \texttt{reduce} et à une autre fonction importée ne sont donc
+pas distingués.
 \section{Limites de l'évaluation}
+
+Les limites précédentes portent sur les méthodes elles-mêmes. L'évaluation
+qui en a été faite présente aussi plusieurs limites, qui restreignent la
+portée des conclusions du chapitre~\ref{chap:resultats}.
+
+\paragraph{Absence de vérité terrain.}
+Aucune paire d'exercices n'est annotée selon son degré de substituabilité.
+Les mesures ont donc été évaluées sur leur comportement attendu, et non sur
+leur capacité à reproduire un jugement pédagogique. Un score élevé signale
+une proximité de représentation ; il ne prouve pas que deux exercices
+soient interchangeables pour un apprenant. Pour la même raison, les poids
+de la combinaison et les seuils de décision n'ont pas pu être calibrés.
+
+\paragraph{Variantes construites autour d'un seul exercice.}
+Les douze variantes contrôlées dérivent toutes de la même correction de
+référence, qui associe un parcours, une sélection et deux accumulateurs.
+Les conclusions tirées de ces variantes valent pour ce type de programme et
+ne se transposent pas directement à des exercices récursifs, à des
+programmes orientés objet ou à des scripts sans structure de contrôle. Les
+variantes ont en outre été écrites manuellement, et leur classement (même
+stratégie ou stratégie différente) constitue une hypothèse, que seul un
+enseignant pourrait confirmer.
+
+\paragraph{Sous-corpus restreint et peu représentatif.}
+Le test sur le corpus général s'est limité aux 99 corrections issues de
+GitHub (4\,851 paires), au lieu des 906 corrections du corpus de départ
+(409\,965 paires). Ces programmes sont très courts
+(6,03 lignes en moyenne, contre 13,39 pour le corpus entier), et près des
+deux tiers sont des scripts sans fonction. Les comportements observés,
+comme les nombreux scores NCST égaux à 1, n'ont donc pas été vérifiés sur
+des corrections plus longues.
+
+\paragraph{Un seul langage.}
+Toutes les expériences portent sur Python. L'objectif du projet est
+pourtant de comparer des exercices quel que soit le langage ; le
+comportement des mesures sur d'autres langages, comme Java ou C, n'a pas été
+étudié.
+
+\paragraph{Indicateurs d'accord, et non de validité.}
+Les corrélations calculées sur le corpus mesurent l'accord entre les trois
+scores. Une forte corrélation peut traduire une dépendance commune à la
+taille des programmes plutôt qu'une même perception de la démarche. Ces
+indicateurs aident à interpréter
+les mesures, mais ne remplacent pas une validation externe.
+
 \section{Difficultés rencontrées}
-\section{perspective}
+
+\paragraph{Définir ce que l'on mesure.}
+La première difficulté a été conceptuelle. La notion de substituabilité
+n'a pas de définition opérationnelle, et elle se distingue à la fois de la
+similarité textuelle, de la détection de plagiat et de l'équivalence
+fonctionnelle. En l'absence de données annotées et de traces
+d'apprenants, il a fallu déterminer quelles propriétés des corrections
+pouvaient en être un indice raisonnable, puis accepter que les mesures
+produites restent des indicateurs à interpréter.
+
+\paragraph{Choisir la source d'information.}
+Les premières expériences sur les énoncés (TF--IDF et SBERT) ont donné un
+signal thématique, mais trop dépendant du vocabulaire et du contexte
+implicite des consignes. Le passage à une analyse du code des corrections
+a demandé de reconstruire la démarche, puis d'écarter plusieurs pistes
+prometteuses dans la littérature, comme les graphes de dépendances, dont le
+coût de comparaison est incompatible avec un corpus de plusieurs centaines
+d'exercices.
+
+\paragraph{Qualité des données.}
+Tree-sitter ne signale pas les erreurs de syntaxe par une exception : un
+fichier invalide produit un arbre partiel qui traverse tout le pipeline et
+reçoit des scores sans signification. Le contrôle syntaxique ajouté a
+révélé que 100 des 906 corrections étaient invalides, la plupart à cause
+de balises Markdown héritées de leur collecte. Le corpus contient aussi des
+fichiers dégénérés, comme une correction réduite à des commentaires, qui
+pèsent sur les statistiques.
+
+\paragraph{Diagnostiquer des scores inattendus.}
+Plusieurs comportements des mesures ne sont apparus qu'à l'analyse des
+résultats. Sur le corpus, un cinquième des paires obtenait un TSED nul : la
+distance d'édition pouvait dépasser la taille du plus grand arbre, et les
+scripts sans fonction étaient comparés à des fonctions isolées. La
+correction de ces deux points a modifié l'échelle du TSED et conduit à
+reprendre les résultats et leur interprétation.
+
+\paragraph{Coût de calcul.}
+Le nombre de paires croît avec le carré du nombre de fichiers : les 906
+corrections forment 409\,965 paires, et chaque paire demande une distance
+d'édition d'arbres. Sur les programmes courts du sous-corpus, le calcul
+prend déjà de l'ordre de 0,1 seconde par paire, sans parallélisation.
+
+\section{Perspectives}
+
+\paragraph{Valider avec les enseignants.}
+La suite la plus directe consiste à soumettre les paires candidates à des
+enseignants. Leurs jugements constitueraient la vérité terrain qui manque
+aujourd'hui : ils permettraient de vérifier si une proximité de structure
+correspond à une substituabilité, de fixer les poids de la combinaison et
+de déterminer un seuil de décision. Avec suffisamment de paires annotées,
+les poids pourraient être appris, par exemple par une régression
+logistique sur les trois scores.
+
+\paragraph{Étendre l'évaluation.}
+L'évaluation doit être reprise sur les 906 corrections, ce qui suppose de
+paralléliser le calcul des paires et de ne construire chaque représentation
+qu'une fois par fichier. De nouvelles variantes contrôlées, dérivées
+d'exercices d'autres natures (récursion, chaînes de caractères,
+programmation orientée objet), permettraient de vérifier que les
+conclusions ne dépendent pas de l'exercice de référence choisi.
+
+\paragraph{Améliorer la normalisation.}
+Plusieurs écarts observés sur les variantes relèvent de la normalisation et
+non des mesures : élimination du code mort, rapprochement des boucles
+\texttt{for} et \texttt{while} équivalentes, \emph{inlining} des fonctions
+précédées d'affectations simples, traduction des compréhensions en
+parcours et sélection. Chacune de ces règles doit toutefois être pesée :
+plus la normalisation rapproche des écritures, plus elle risque d'effacer
+des différences de démarche que l'enseignant juge significatives.
+
+\paragraph{Comparer le programme entier.}
+Le TSED et l'EIIA ne comparent que la fonction principale lorsque les deux
+fichiers en contiennent. Une comparaison du programme entier, qui
+apparierait les fonctions des deux fichiers avant de sommer les
+distances, prendrait en compte les fonctions auxiliaires et le code placé
+au niveau du module. Pour le NCST, un appariement ordonné optimal, et non
+glouton, ainsi que la prise en compte du parent et du type d'arête,
+rendraient la mesure plus exigeante.
+
+\paragraph{Passer à d'autres langages.}
+Tree-sitter fournit des grammaires pour Java, C et C++, déjà installées
+dans le projet. Le NCST, qui ne retient que des catégories structurelles
+communes à ces langages, est le meilleur candidat à une comparaison
+inter-langages ; il faudrait notamment écrire, pour chaque langage, la
+table de correspondance entre ses nœuds et les catégories du NCST.
+
+\paragraph{Combiner code et énoncés.}
+Les mesures sur le code et les mesures sur les énoncés capturent des
+dimensions différentes : la démarche d'un côté, le thème de l'autre. Leur
+combinaison permettrait de distinguer deux exercices de même démarche sur
+des thèmes différents, utiles pour varier les entraînements, de deux
+exercices de même thème mais de démarches distinctes.
+
+\paragraph{Intégrer les mesures dans PLaTon.}
+À plus long terme, les mesures pourraient être intégrées à la plateforme
+PLaTon, sous la forme d'un outil de recherche d'exercices proches pour
+l'enseignant ou d'un module de recommandation pour l'étudiant. Les
+interactions des apprenants avec les exercices recommandés fourniraient
+alors les traces qui manquent aujourd'hui, et permettraient de sortir
+progressivement de la situation de démarrage à froid.
 
 \chapter*{Conclusion générale}
 \addcontentsline{toc}{chapter}{Conclusion générale}
-\acompleter{3 pages}
+
+Ce stage s'est attaché à une question posée par les environnements
+d'apprentissage de la programmation : comment reconnaître, dans une banque
+d'exercices, deux activités qui, sans être identiques, mobilisent une
+démarche suffisamment proche pour être substituables ? Une telle mesure
+permettrait à un enseignant de retrouver des exercices voisins de ceux
+qu'il utilise, et à un étudiant de s'entraîner sur des problèmes
+comparables sans refaire la même consigne. La difficulté tient à la fois à
+la notion elle-même, qui ne se confond ni avec la similarité textuelle, ni
+avec le plagiat, ni avec l'équivalence fonctionnelle, et au contexte de
+démarrage à froid : aucune paire n'est annotée et aucune trace
+d'apprenant n'est disponible.
+
+L'état de l'art a montré la diversité des approches de la similarité de
+code, des comparaisons textuelles et lexicales aux graphes de dépendances
+et aux modèles appris. Les expériences préliminaires sur les énoncés ont
+fourni un signal thématique, mais trop sensible au vocabulaire pour
+caractériser une démarche. Le travail s'est donc concentré sur le code des
+corrections de référence, analysé de manière statique, avec trois mesures
+complémentaires et interprétables. L'EIIA résume chaque programme par un
+profil de métriques structurelles. Le TSED compare les arbres syntaxiques
+abstraits normalisés au moyen d'une distance d'édition. Le NCST, construit
+au cours de ce stage, ne conserve que l'organisation des structures de
+contrôle et compare deux programmes par un appariement ordonné de leurs
+nœuds. Ces mesures sont réunies dans un pipeline unique et dans une
+interface qui permet de rejouer une comparaison et d'inspecter chacune des
+représentations intermédiaires.
+
+L'évaluation sur des variantes contrôlées a permis de relier chaque score
+aux transformations qui le font varier. Les trois mesures respectent les
+invariances prévues par leur normalisation : la copie exacte et le
+changement de littéral (variante 7) obtiennent 1 avec chacune d'elles. Elles diffèrent en revanche sur
+les réécritures. Le NCST sépare le mieux les réécritures de même stratégie
+des stratégies différentes, mais il dépend du niveau d'imbrication et
+présente un plancher proche de 0,5. Le TSED distingue finement les
+programmes, mais il pénalise fortement les réécritures qui conservent la
+démarche. L'EIIA mesure avant tout un volume : il réagit davantage au code
+mort qu'à un changement de stratégie. L'analyse du sous-corpus GitHub, limitée
+à 99 des 906 corrections, a retrouvé ces comportements sur des programmes
+réels et en a révélé d'autres : sur des scripts très courts, le NCST ne distingue plus des programmes
+dont les tâches n'ont rien en commun, alors que le TSED les départage.
+
+La principale conclusion est donc qu'aucune mesure ne suffit seule. La
+combinaison du TSED et du NCST, faiblement corrélés et sensibles à des
+transformations différentes, est la plus prometteuse ; l'EIIA, fortement
+lié à la taille des programmes, trouve plutôt sa place comme filtre
+préalable. Les scores doivent être lus de manière relative, pour classer
+des paires, et non comme des pourcentages de similarité. Le pipeline
+produit ainsi, sans données d'apprenants, des indicateurs continus et
+explicables qui permettent de désigner des paires candidates à la
+substitution. Les paires les mieux classées du corpus,
+comme deux corrections qui comptent des caractères de natures différentes
+avec la même démarche, illustrent le type de rapprochement recherché.
+
+Ces résultats restent à confirmer. Ils reposent sur des variantes dérivées
+d'un seul exercice, sur un sous-corpus de programmes courts et sur un seul
+langage, et aucune vérité terrain ne permet encore d'affirmer qu'une
+proximité de structure correspond à une substituabilité pédagogique. La
+suite naturelle de ce travail est la validation des paires candidates par
+des enseignants, qui permettra de calibrer la combinaison des mesures,
+puis l'extension de l'évaluation au corpus complet, à d'autres langages et
+à des normalisations plus riches.
+
+\section*{Bilan personnel}
+
+Sur le plan personnel, ce stage a été ma première expérience d'un travail de
+recherche. Contrairement à un projet de développement dont le résultat est
+fixé à l'avance, il a fallu définir ce que l'on cherchait à mesurer, essayer
+des pistes, en abandonner plusieurs et accepter que certains résultats
+remettent en cause des choix déjà faits. J'ai appris à construire une
+démarche expérimentale : formuler ce qu'une mesure devrait produire avant
+de la calculer, concevoir des cas de test dont le résultat est connu, puis
+expliquer chaque écart entre l'attendu et l'observé.
+
+Sur le plan technique, j'ai approfondi l'analyse syntaxique de programmes
+avec Tree-sitter, la manipulation d'arbres syntaxiques, les distances
+d'édition entre arbres et les méthodes de traitement du langage naturel
+(TF--IDF, SBERT). La réalisation de l'état de l'art m'a appris à rechercher,
+lire et comparer des articles scientifiques, et à les citer avec rigueur.
+La rédaction de ce rapport en \LaTeX{} m'a enfin demandé de rendre des
+choix techniques compréhensibles pour un lecteur non spécialiste.
+
+J'ai également gagné en autonomie et en organisation. Les points réguliers
+avec mon maître de stage m'ont appris à présenter un travail en cours, à
+justifier mes choix et à tenir compte des remarques pour réorienter le
+travail. \averifier{Ce stage a confirmé mon intérêt pour [domaine visé :
+par exemple le traitement de données, l'analyse de code ou les
+technologies éducatives], que je souhaite poursuivre [dans mon projet
+professionnel : poste, poursuite d'études, etc.].}
 
 \printbibliography[heading=bibintoc,nottype=online,title={Bibliographie}]
 \printbibliography[heading=bibintoc,type=online,title={Webographie}]
 
 \appendix
 \chapter{Annexes}
-\acompleter{codes des variantes, tableaux complets, scripts, résultats bruts}
+\section{Code des variantes contrôlées}
+\label{ann:variantes}
+
+Les treize fichiers se trouvent dans le dossier \texttt{dataset/test2/} du
+dépôt. Ils sont reproduits ci-dessous dans l'ordre de leur numéro.
+
+\paragraph{1. Correction de référence} (\texttt{01\_base.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    total = 0
+    nb = 0
+    for x in liste:
+        if x % 2 == 0:
+            total += x
+            nb += 1
+    return total, nb
+\end{lstlisting}
+
+\paragraph{2. Compréhension} (\texttt{2\_comprehension.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    pairs = [x for x in liste if x % 2 == 0]
+    return sum(pairs), len(pairs)
+\end{lstlisting}
+
+\paragraph{3. Récursion} (\texttt{3\_recursion.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    if not liste:
+        return 0, 0
+    t, n = stats_pairs(liste[1:])
+    if liste[0] % 2 == 0:
+        return t + liste[0], n + 1
+    return t, n
+\end{lstlisting}
+
+\paragraph{4. Condition inversée} (\texttt{4\_condition\_inversee\_continue.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    total = 0
+    nb = 0
+    for x in liste:
+        if x % 2 != 0:
+            continue
+        total += x
+        nb += 1
+    return total, nb
+\end{lstlisting}
+
+\paragraph{5. Code mort} (\texttt{5\_code\_mort\_injecte.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    total = 0
+    nb = 0
+    inutile = [0] * 3
+    for x in liste:
+        tmp = x * 1
+        if False:
+            print("jamais")
+        if x % 2 == 0:
+            total += x
+            nb += 1
+        for _ in range(0):
+            inutile.append(tmp)
+    return total, nb
+\end{lstlisting}
+
+\paragraph{6. Opérateurs équivalents} (\texttt{6\_operateurs\_equivalents.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    total = 0
+    nb = 0
+    for x in liste:
+        if (x & 1) == 0:
+            total = total + x
+            nb = nb + 1
+    return total, nb
+\end{lstlisting}
+
+\paragraph{7. Condition \texttt{== 1}} (\texttt{7\_faux\_positif\_semantique.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    total = 0
+    nb = 0
+    for x in liste:
+        if x % 2 == 1:
+            total += x
+            nb += 1
+    return total, nb
+\end{lstlisting}
+
+\paragraph{8. Fonctions auxiliaires} (\texttt{8\_fonctions\_auxiliaires\_multiples.py})
+\begin{lstlisting}[style=pyncst]
+def est_pair(n):
+    n0=n
+    return n0 % 2 == 0
+
+
+def accumuler(total, nb, x):
+    return total + x, nb + 1
+
+
+def stats_pairs(liste):
+    total, nb = 0, 0
+    for x in liste:
+        if est_pair(x):
+            total, nb = accumuler(total, nb, x)
+    return total, nb
+\end{lstlisting}
+
+\paragraph{9. \texttt{while} avec index} (\texttt{9\_while\_index.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    total = 0
+    nb = 0
+    i = 0
+    while i < len(liste):
+        x = liste[i]
+        if x % 2 == 0:
+            total += x
+            nb += 1
+        i += 1
+    return total, nb
+\end{lstlisting}
+
+\paragraph{10. Témoin négatif \texttt{reduce}} (\texttt{10\_temoin\_negatif\_reduce.py})
+\begin{lstlisting}[style=pyncst]
+from functools import reduce
+
+
+def stats_pairs(liste):
+    return reduce(
+        lambda acc, x: (acc[0] + x, acc[1] + 1) if x % 2 == 0 else acc,
+        liste,
+        (0, 0),
+    )
+\end{lstlisting}
+
+\paragraph{11. Copie exacte} (\texttt{11\_copi\_exacte.py.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    total = 0
+    nb = 0
+    for x in liste:
+        if x % 2 == 0:
+            total += x
+            nb += 1
+    return total, nb
+\end{lstlisting}
+
+\paragraph{12. Sortie ajoutée} (\texttt{12\_sortie\_ajoutée.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    nb = 0
+    total=0
+    liste_indice=[]
+    for i,x in enumerate(liste):
+        if x % 2 == 0:
+            liste_indice.append(i)
+            total += x
+            nb += 1
+    return total, nb,liste_indice
+\end{lstlisting}
+
+\paragraph{13. Instructions inversées} (\texttt{13instructions\_inversé.py})
+\begin{lstlisting}[style=pyncst]
+def stats_pairs(liste):
+    nb = 0
+    total = 0
+    for x in liste:
+        if x % 2 == 0:
+            nb +=1
+            total +=x
+    return total, nb
+\end{lstlisting}
+
+\section{Scores des 78 paires de variantes}
+\label{ann:paires}
+
+Le tableau~\ref{tab:paires_completes} donne les trois scores pour toutes les
+paires formées par les treize fichiers. Les variantes sont désignées par leur
+numéro. Les résultats sont produits par la commande
+\texttt{python -u run\_poc.py dataset/test2 output/test2 -{}-clean}.
+
+\begingroup
+\small
+\begin{longtable}{ccccc}
+\caption{Scores TSED, EIIA et NCST pour les 78 paires de variantes.}
+\label{tab:paires_completes}\\
+\toprule
+\textbf{A} & \textbf{B} & \textcolor{tsedcol}{\textbf{TSED}} &
+\textcolor{eiiacol}{\textbf{EIIA}} & \textcolor{ncstcol}{\textbf{NCST}} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{A} & \textbf{B} & \textcolor{tsedcol}{\textbf{TSED}} &
+\textcolor{eiiacol}{\textbf{EIIA}} & \textcolor{ncstcol}{\textbf{NCST}} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+1 & 2 & 0,538 & 0,785 & 0,600 \\
+1 & 3 & 0,631 & 0,746 & 0,560 \\
+1 & 4 & 0,918 & 0,966 & 0,815 \\
+1 & 5 & 0,645 & 0,514 & 0,765 \\
+1 & 6 & 0,896 & 0,875 & 1,000 \\
+1 & 7 & 1,000 & 1,000 & 1,000 \\
+1 & 8 & 0,693 & 0,902 & 0,774 \\
+1 & 9 & 0,767 & 0,671 & 0,897 \\
+1 & 10 & 0,535 & 0,871 & 0,500 \\
+1 & 11 & 1,000 & 1,000 & 1,000 \\
+1 & 12 & 0,742 & 0,687 & 0,929 \\
+1 & 13 & 0,944 & 1,000 & 1,000 \\
+2 & 3 & 0,494 & 0,608 & 0,632 \\
+2 & 4 & 0,530 & 0,768 & 0,571 \\
+2 & 5 & 0,410 & 0,412 & 0,429 \\
+2 & 6 & 0,500 & 0,698 & 0,600 \\
+2 & 7 & 0,538 & 0,785 & 0,600 \\
+2 & 8 & 0,529 & 0,743 & 0,480 \\
+2 & 9 & 0,434 & 0,532 & 0,522 \\
+2 & 10 & 0,500 & 0,794 & 0,714 \\
+2 & 11 & 0,538 & 0,785 & 0,600 \\
+2 & 12 & 0,463 & 0,550 & 0,545 \\
+2 & 13 & 0,538 & 0,785 & 0,600 \\
+3 & 4 & 0,588 & 0,762 & 0,538 \\
+3 & 5 & 0,496 & 0,668 & 0,424 \\
+3 & 6 & 0,629 & 0,843 & 0,560 \\
+3 & 7 & 0,631 & 0,746 & 0,560 \\
+3 & 8 & 0,609 & 0,804 & 0,467 \\
+3 & 9 & 0,559 & 0,837 & 0,500 \\
+3 & 10 & 0,494 & 0,743 & 0,526 \\
+3 & 11 & 0,631 & 0,746 & 0,560 \\
+3 & 12 & 0,554 & 0,862 & 0,519 \\
+3 & 13 & 0,607 & 0,746 & 0,560 \\
+4 & 5 & 0,593 & 0,525 & 0,629 \\
+4 & 6 & 0,821 & 0,887 & 0,815 \\
+4 & 7 & 0,918 & 0,966 & 0,815 \\
+4 & 8 & 0,658 & 0,902 & 0,688 \\
+4 & 9 & 0,703 & 0,685 & 0,733 \\
+4 & 10 & 0,528 & 0,856 & 0,476 \\
+4 & 11 & 0,918 & 0,966 & 0,815 \\
+4 & 12 & 0,700 & 0,701 & 0,759 \\
+4 & 13 & 0,863 & 0,966 & 0,815 \\
+5 & 6 & 0,589 & 0,583 & 0,765 \\
+5 & 7 & 0,645 & 0,514 & 0,765 \\
+5 & 8 & 0,500 & 0,553 & 0,308 \\
+5 & 9 & 0,736 & 0,764 & 0,811 \\
+5 & 10 & 0,396 & 0,503 & 0,357 \\
+5 & 11 & 0,645 & 0,514 & 0,765 \\
+5 & 12 & 0,645 & 0,748 & 0,833 \\
+5 & 13 & 0,617 & 0,514 & 0,765 \\
+6 & 7 & 0,896 & 0,875 & 1,000 \\
+6 & 8 & 0,700 & 0,917 & 0,774 \\
+6 & 9 & 0,695 & 0,757 & 0,897 \\
+6 & 10 & 0,500 & 0,840 & 0,500 \\
+6 & 11 & 0,896 & 0,875 & 1,000 \\
+6 & 12 & 0,681 & 0,775 & 0,929 \\
+6 & 13 & 0,844 & 0,875 & 1,000 \\
+7 & 8 & 0,693 & 0,902 & 0,774 \\
+7 & 9 & 0,767 & 0,671 & 0,897 \\
+7 & 10 & 0,535 & 0,871 & 0,500 \\
+7 & 11 & 1,000 & 1,000 & 1,000 \\
+7 & 12 & 0,742 & 0,687 & 0,929 \\
+7 & 13 & 0,944 & 1,000 & 1,000 \\
+8 & 9 & 0,559 & 0,713 & 0,706 \\
+8 & 10 & 0,473 & 0,888 & 0,400 \\
+8 & 11 & 0,693 & 0,902 & 0,774 \\
+8 & 12 & 0,533 & 0,737 & 0,727 \\
+8 & 13 & 0,653 & 0,902 & 0,774 \\
+9 & 10 & 0,483 & 0,645 & 0,435 \\
+9 & 11 & 0,767 & 0,671 & 0,897 \\
+9 & 12 & 0,748 & 0,951 & 0,903 \\
+9 & 13 & 0,733 & 0,671 & 0,897 \\
+10 & 11 & 0,535 & 0,871 & 0,500 \\
+10 & 12 & 0,455 & 0,666 & 0,455 \\
+10 & 13 & 0,549 & 0,871 & 0,500 \\
+11 & 12 & 0,742 & 0,687 & 0,929 \\
+11 & 13 & 0,944 & 1,000 & 1,000 \\
+12 & 13 & 0,742 & 0,687 & 0,929 \\
+\end{longtable}
+\endgroup
 
 \end{document}
